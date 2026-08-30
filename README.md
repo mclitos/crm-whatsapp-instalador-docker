@@ -35,7 +35,7 @@ comando.
 > **4.** Pegale esto y mandá:
 >
 > ```
-> Instalame este CRM: https://github.com/ignarru/crm-whatsapp-instalador
+> Instalame este CRM: https://github.com/mclitos/crm-whatsapp-instalador
 > ```
 >
 > Y ya está. Él lo descarga, lee las instrucciones que vienen adentro y te va
@@ -98,7 +98,7 @@ Los dos necesitan [Node.js](https://nodejs.org) versión 20 o más y
    escritorio**: es una ventana normal donde escribís.
 2. Descargá este repo:
    ```bash
-   git clone https://github.com/ignarru/crm-whatsapp-instalador.git
+   git clone https://github.com/mclitos/crm-whatsapp-instalador.git
    ```
 3. **Abrí esa carpeta con Claude Code y escribile:**
 
@@ -114,7 +114,7 @@ pide algo, qué significa un término, si podés saltear un paso.
 Exactamente lo mismo, sin Claude en el medio:
 
 ```bash
-git clone https://github.com/ignarru/crm-whatsapp-instalador.git
+git clone https://github.com/mclitos/crm-whatsapp-instalador.git
 cd crm-whatsapp-instalador
 npm run instalar
 ```
