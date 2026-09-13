@@ -9,6 +9,7 @@ credenciales.ruta
 .env
 .env.*
 !credenciales.env.example
+!.env.example
 
 # El CRM se clona fresco del upstream: no vive en este repo
 /crm/
