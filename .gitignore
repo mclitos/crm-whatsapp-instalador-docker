@@ -4,6 +4,7 @@ credenciales.env.bak
 # Puntero a las credenciales guardadas afuera del repo. No es secreto, pero
 # revela rutas de la máquina de cada uno: es de cada instalación.
 credenciales.ruta
+.web-installer/
 *.env.local
 .env
 .env.*
@@ -14,6 +15,8 @@ credenciales.ruta
 
 # Estado local del instalador (no tiene secretos, pero es de cada máquina)
 .instalador.json
+/.atl/
+/.codegraph/
 
 node_modules/
 *.log

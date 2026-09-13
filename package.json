@@ -1,13 +1,24 @@
 {
-  "name": "crm-whatsapp-instalador",
+  "name": "crm-whatsapp-instalador-docker",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Instalador guiado del CRM de WhatsApp (wacrm) — de 41 pasos manuales a 4 credenciales y un comando.",
+  "description": "Instalador independiente de wacrm con Docker y Supabase.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mclitos/crm-whatsapp-instalador-docker.git"
+  },
+  "homepage": "https://github.com/mclitos/crm-whatsapp-instalador-docker#readme",
+  "bugs": {
+    "url": "https://github.com/mclitos/crm-whatsapp-instalador-docker/issues"
+  },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "web": "node scripts/web.mjs",
     "instalar": "node scripts/instalar.mjs",
     "creds": "node scripts/credenciales.mjs",
     "paso1": "node scripts/paso1-supabase.mjs",

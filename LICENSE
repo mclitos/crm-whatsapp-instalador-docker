@@ -23,6 +23,8 @@ SOFTWARE.
 ---
 
 Este instalador es obra independiente de IABYIA y NO incluye el código del CRM.
-El CRM que instala es wacrm (https://github.com/ArnasDon/wacrm), also MIT,
-copyright de sus respectivos autores, y se clona fresco desde su repositorio
-oficial en el momento de la instalación.
+ArnasDon/wacrm (https://github.com/ArnasDon/wacrm) es el CRM original, también
+publicado bajo licencia MIT y con copyright de sus respectivos autores.
+mclitos/wacrm (https://github.com/mclitos/wacrm) es la fuente mantenida que este
+instalador clona de forma predeterminada, y puede reemplazarse mediante
+CRM_REPO_URL.

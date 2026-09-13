@@ -15,19 +15,16 @@
  * ENCRYPTION_KEY (rotarla dejaría huérfanos los tokens ya guardados).
  */
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
-import { execFileSync } from "node:child_process";
 import {
-  ROOT, CRM_DIR, C, ok, fail, warn, info, encabezado, titulo, progreso, morir, salir,
-  leerEnv, escribirEnv, leerEstado, guardarEstado, preguntar, elegir, confirmar,
-  rutaCredenciales, hexAlAzar,
+  CRM_DIR, C, ok, fail, warn, info, encabezado, titulo, progreso, morir, salir,
+  leerEnv, escribirEnv, leerEstado, guardarEstado, preguntar, elegir,
+  rutaCredenciales,
 } from "./lib/ui.mjs";
 import { SupabaseAdmin, generarDbPass } from "./lib/supabase.mjs";
+import { resolveCrmRepoUrl } from "./lib/crm-source.mjs";
+import { CrmWorkspace } from "./lib/crm-workspace.mjs";
 
-const UPSTREAM = "https://github.com/ArnasDon/wacrm.git";
 const CREDS = rutaCredenciales();
-const ENV_CRM = resolve(CRM_DIR, ".env.local");
 
 const creds = leerEnv(CREDS);
 if (!creds.SUPABASE_ACCESS_TOKEN) {
@@ -37,40 +34,8 @@ if (!creds.SUPABASE_ACCESS_TOKEN) {
 const estado = leerEstado();
 encabezado("Paso 1 — Supabase", "proyecto, llaves, migraciones y auth");
 
-// ── 1. el código del CRM ────────────────────────────────────────────────────
-titulo("1. Código del CRM");
-
-if (!existsSync(CRM_DIR)) {
-  const origen = creds.CRM_REPO_URL || UPSTREAM;
-  info(`Clonando ${origen} …`);
-  try {
-    execFileSync("git", ["clone", "--depth", "1", origen, CRM_DIR], { stdio: "pipe" });
-    ok("Clonado en ./crm");
-  } catch (e) {
-    morir(
-      `No pude clonar el repo: ${String(e.stderr || e.message).slice(0, 300)}`,
-      "¿Tenés git instalado? Probá:  git --version",
-    );
-  }
-} else {
-  ok("./crm ya existe", "no lo toco (si querés actualizarlo: cd crm && git pull)");
-}
-
-const DIR_MIGRACIONES = resolve(CRM_DIR, "supabase", "migrations");
-if (!existsSync(DIR_MIGRACIONES)) {
-  morir(
-    "El clon no tiene supabase/migrations.",
-    "¿Clonaste el repo correcto? Borrá ./crm y volvé a correr el paso 1.",
-  );
-}
-
-const migraciones = readdirSync(DIR_MIGRACIONES)
-  .filter((f) => f.endsWith(".sql"))
-  .sort(); // 001…039: el orden alfabético ES el orden correcto
-ok(`${migraciones.length} migraciones encontradas`, `${migraciones[0]} … ${migraciones.at(-1)}`);
-
-// ── 2. la cuenta ────────────────────────────────────────────────────────────
-titulo("2. Cuenta de Supabase");
+// ── 1. la cuenta ────────────────────────────────────────────────────────────
+titulo("1. Cuenta de Supabase");
 
 const supa = new SupabaseAdmin(creds.SUPABASE_ACCESS_TOKEN);
 const orgs = await supa.organizaciones();
@@ -82,6 +47,22 @@ if (!orgs.ok) {
 }
 const listaOrgs = orgs.json || [];
 ok(`Token válido`, `${listaOrgs.length} organización(es)`);
+
+// The shared workspace validates the clone without modifying a valid checkout.
+// Account validation deliberately happens first, before cloning or writing.
+// ── 2. el código del CRM ────────────────────────────────────────────────────
+titulo("2. Código del CRM");
+const workspace = new CrmWorkspace({ directory: CRM_DIR });
+try {
+  const prepared = await workspace.ensure(resolveCrmRepoUrl({ credentials: creds }));
+  if (prepared.cloned) ok("Clonado en ./crm");
+  else ok("./crm ya existe", "no lo toco (si querés actualizarlo: cd crm && git pull)");
+} catch (error) {
+  morir(error.message, "Revisá que git esté instalado y que ./crm no sea un checkout incompleto.");
+}
+const migrationEntries = await workspace.readMigrations();
+const migraciones = migrationEntries.map((migration) => migration.fileName);
+ok(`${migraciones.length} migraciones encontradas`, `${migraciones[0]} … ${migraciones.at(-1)}`);
 
 // ── 3. el proyecto ──────────────────────────────────────────────────────────
 titulo("3. Proyecto");
@@ -112,6 +93,9 @@ if (ref) {
   console.log("");
   info(`Creando "${nombre}" en ${region} (plan free)…`);
   const dbPass = generarDbPass();
+  // The password cannot be recovered from Supabase, so persist it before the
+  // create request. A successful response is followed immediately by the ref.
+  escribirEnvCreds({ ...creds, SUPABASE_DB_PASSWORD: dbPass });
   const creado = await supa.crearProyecto({
     nombre, dbPass, organizacion: org.slug, region, plan: "free",
   });
@@ -125,24 +109,22 @@ if (ref) {
   ok(`Proyecto creado`, ref);
   guardarEstado({ projectRef: ref, dbPassGuardada: true });
 
-  // La contraseña de la base no se puede volver a ver: la dejo en credenciales.env.
   escribirEnvCreds({ ...creds, SUPABASE_PROJECT_REF: ref, SUPABASE_DB_PASSWORD: dbPass });
   info("Guardé el ref y la contraseña de la base en credenciales.env");
-
-  process.stdout.write(`  ${C.dim("Esperando a que la base arranque")}`);
-  const listo = await supa.esperarProyecto(ref, {
-    onTick: (est, seg) => process.stdout.write(C.dim(` ${est}(${seg}s)`)),
-  });
-  console.log("");
-  if (!listo.ok) {
-    morir(
-      `La base no llegó a estar lista (último estado: ${listo.estado}).`,
-      `Mirá https://supabase.com/dashboard/project/${ref} y volvé a correr el paso 1 cuando esté verde.`,
-    );
-  }
-  ok("Base arriba", "ACTIVE_HEALTHY");
 }
 guardarEstado({ projectRef: ref });
+process.stdout.write(`  ${C.dim("Esperando a que la base esté saludable")}`);
+const listo = await supa.esperarProyecto(ref, {
+  onTick: (est, seg) => process.stdout.write(C.dim(` ${est}(${seg}s)`)),
+});
+console.log("");
+if (!listo.ok) {
+  morir(
+    `La base no llegó a estar lista (último estado: ${listo.estado}).`,
+    `Mirá https://supabase.com/dashboard/project/${ref} y volvé a correr el paso 1 cuando esté verde.`,
+  );
+}
+ok("Base arriba", "ACTIVE_HEALTHY");
 
 // ── 4. las llaves ───────────────────────────────────────────────────────────
 titulo("4. Llaves de la API");
@@ -163,7 +145,12 @@ if (!prep.ok) {
   );
 }
 
-const yaAplicadas = await supa.migracionesAplicadas(ref);
+let yaAplicadas;
+try {
+  yaAplicadas = await supa.migracionesAplicadas(ref);
+} catch (error) {
+  morir(error.message, "No es seguro continuar sin saber qué migraciones ya se aplicaron.");
+}
 if (yaAplicadas.size) info(`${yaAplicadas.size} ya estaban aplicadas — las salteo`);
 
 let aplicadas = 0, salteadas = 0;
@@ -180,14 +167,16 @@ for (const [i, archivo] of migraciones.entries()) {
   }
 
   progreso(i + 1, migraciones.length, archivo);
-  const sql = readFileSync(resolve(DIR_MIGRACIONES, archivo), "utf8");
-  const r = await supa.sql(ref, sql);
+  const sql = migrationEntries[i].sql;
+  const r = await supa.aplicarMigracion(ref, { version, name: nombre, sql });
 
   if (!r.ok) {
-    fallidas.push({ archivo, error: r.error });
+    fallidas.push({
+      archivo,
+      error: `${r.error}. El SQL y su historial se guardan juntos: reintentá; si ya quedó aplicada, se salteará automáticamente.`,
+    });
     break; // si una falla, las siguientes asumen su esquema: no tiene sentido seguir
   }
-  await supa.marcarMigracion(ref, version, nombre);
   aplicadas++;
 }
 progreso(migraciones.length, migraciones.length, "");
@@ -211,11 +200,11 @@ ok(`${aplicadas} aplicadas · ${salteadas} ya estaban`, `${migraciones.length} e
 // ── 6. verificación del esquema ─────────────────────────────────────────────
 titulo("6. Verificación del esquema");
 
-const VERIFY = resolve(CRM_DIR, "supabase", "ci", "verify-schema.sql");
-if (existsSync(VERIFY)) {
-  const r = await supa.sql(ref, readFileSync(VERIFY, "utf8"));
+const verifySql = await workspace.readVerifySchema();
+if (verifySql) {
+  const r = await supa.sql(ref, verifySql);
   if (r.ok) ok("El esquema pasa la verificación del propio proyecto");
-  else fail(`La verificación falló: ${r.error}`, "alguna migración corrió a medias");
+  else morir(`La verificación falló: ${r.error}`, "alguna migración corrió a medias; no es seguro continuar");
 } else {
   warn("El repo no trae supabase/ci/verify-schema.sql", "salteo la verificación");
 }
@@ -265,42 +254,17 @@ if (!rAuth.ok) {
 // ── 8. .env.local del CRM ───────────────────────────────────────────────────
 titulo("8. Archivo .env.local del CRM");
 
-const envPrevio = leerEnv(ENV_CRM);
-
-// ⚠️ Si ya había una ENCRYPTION_KEY, se respeta. Rotarla deja huérfanos los
-// tokens de WhatsApp ya encriptados y hay que reconectar todo a mano.
-const encryptionKey = envPrevio.ENCRYPTION_KEY || hex(32);
-if (envPrevio.ENCRYPTION_KEY) ok("ENCRYPTION_KEY conservada", "(rotarla te obligaría a reconectar WhatsApp)");
-else ok("ENCRYPTION_KEY generada", "64 hex = AES-256-GCM");
-
-const cronSecret = envPrevio.AUTOMATION_CRON_SECRET || hex(32);
-const locale = detectarLocale();
-
-escribirEnv(
-  ENV_CRM,
-  [
-    { titulo: "SUPABASE", vars: {
-      NEXT_PUBLIC_SUPABASE_URL: llaves.url,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: llaves.anon,
-      SUPABASE_SERVICE_ROLE_KEY: llaves.serviceRole,
-    }},
-    { titulo: "SECRETOS DE LA APP", vars: {
-      ENCRYPTION_KEY: encryptionKey,
-      AUTOMATION_CRON_SECRET: cronSecret,
-    }},
-    { titulo: "META", vars: {
-      META_APP_SECRET: creds.META_APP_SECRET || "",
-      META_APP_ID: creds.META_APP_ID || "",
-    }},
-    { titulo: "SITIO", vars: {
-      NEXT_PUBLIC_SITE_URL: publicUrl || "http://localhost:3000",
-      NEXT_PUBLIC_APP_LOCALE: locale,
-    }},
-  ],
-  "Generado por el instalador de IABYIA. NO subir a GitHub.\n" +
-    "Si cambiás una variable NEXT_PUBLIC_*, hay que reconstruir la app\n" +
-    "(se inlinean en el bundle del navegador en tiempo de build).",
-);
+const locale = await workspace.detectLocale();
+await workspace.writeEnvironment({
+  supabaseUrl: llaves.url,
+  anonKey: llaves.anon,
+  serviceRoleKey: llaves.serviceRole,
+  publicUrl: publicUrl || "http://localhost:3000",
+  locale,
+  metaAppSecret: creds.META_APP_SECRET || "",
+  metaAppId: creds.META_APP_ID || "",
+});
+ok("ENCRYPTION_KEY y AUTOMATION_CRON_SECRET conservadas si ya existían");
 ok("crm/.env.local escrito", `locale: ${locale}`);
 
 // ── cierre ──────────────────────────────────────────────────────────────────
@@ -320,20 +284,6 @@ if (!publicUrl) {
 console.log("");
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-function hex(bytes) {
-  return hexAlAzar(bytes);
-}
-
-/** Si el CRM trae traducción al español, la usamos. Si no, inglés. */
-function detectarLocale() {
-  const dir = resolve(CRM_DIR, "messages");
-  if (!existsSync(dir)) return "en";
-  const disponibles = readdirSync(dir)
-    .filter((f) => f.endsWith(".json"))
-    .map((f) => f.replace(/\.json$/, ""));
-  return disponibles.includes("es") ? "es" : disponibles[0] || "en";
-}
-
 function escribirEnvCreds(valores) {
   escribirEnv(
     CREDS,
@@ -353,6 +303,9 @@ function escribirEnvCreds(valores) {
         PUBLIC_URL: valores.PUBLIC_URL || "",
         VERIFY_TOKEN: valores.VERIFY_TOKEN || "",
       }},
+      ...(valores.CRM_REPO_URL ? [{ titulo: "ORIGEN DEL CRM", vars: {
+        CRM_REPO_URL: valores.CRM_REPO_URL,
+      }}] : []),
     ],
     "CREDENCIALES — generado por el instalador.\nNO subir a GitHub. NO mostrar si grabás pantalla.",
   );

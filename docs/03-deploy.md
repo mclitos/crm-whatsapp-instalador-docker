@@ -29,7 +29,9 @@ npm run tunel
 ```
 
 Eso abre el túnel, **captura la URL y la guarda solo** en `PUBLIC_URL`. No
-tenés que copiar ni pegar nada. Dejá también esta ventana abierta.
+tenés que copiar ni pegar nada. Dejá también esta ventana abierta. Si no
+definiste `PORT`, el script usa 3300 cuando detecta el CRM de Docker y 3000
+para el arranque local con Node.
 
 > ⏱️ **La dirección tarda entre 1 y 4 minutos en activarse.** El túnel se
 > conecta enseguida, pero el nombre tarda en propagarse por internet. El script
@@ -50,7 +52,8 @@ npm run paso2    # conecta WhatsApp
 **Si el túnel no arranca**, la alternativa manual:
 
 ```bash
-npx localtunnel --port 3000
+npx localtunnel --port 3300   # Docker
+npx localtunnel --port 3000   # Node local
 ```
 
 y pegás esa URL en `PUBLIC_URL` de `credenciales.env` a mano.
@@ -105,8 +108,8 @@ sudo apt-get install -y nodejs git
 **4. Instalá el CRM:**
 
 ```bash
-git clone https://github.com/ignarru/crm-whatsapp-instalador.git
-cd crm-whatsapp-instalador
+git clone https://github.com/mclitos/crm-whatsapp-instalador-docker.git
+cd crm-whatsapp-instalador-docker
 npm run creds     # las 4 credenciales, y tu dominio en PUBLIC_URL
 npm run paso1     # Supabase: proyecto, migraciones, llaves
 npm run vps       # ← levanta el CRM con HTTPS
@@ -177,9 +180,10 @@ Todas sirven. Es una app Next.js estándar.
 
 ## Sobre el fork
 
-El instalador clona el CRM **fresco desde el repositorio oficial** y no lo toca.
-Es a propósito: así el instalador no envejece cuando el proyecto se actualiza
-(en pocos meses pasó de 26 migraciones a 39).
+El instalador clona el CRM desde `mclitos/wacrm`, un fork mantenido de
+`ArnasDon/wacrm`, y no incluye una copia dentro de este repositorio. Este origen
+predeterminado ofrece una base de instalación controlada y puede sustituirse
+mediante `CRM_REPO_URL`.
 
 Si querés tu propia copia —para deployar desde tu GitHub, cambiarle el logo,
 ponerle tu marca— la licencia MIT te deja:

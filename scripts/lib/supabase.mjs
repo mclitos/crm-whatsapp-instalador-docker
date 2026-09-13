@@ -118,6 +118,21 @@ export class SupabaseAdmin {
   async llaves(ref) {
     const url = `https://${ref}.supabase.co`;
 
+    const parseKeyList = (json) => {
+      const keys = Array.isArray(json) ? json : [];
+      const byName = (name) => keys.find((key) => key.name === name)?.api_key;
+      const byType = (type) => keys.find((key) => key.type === type)?.api_key;
+      const anon = byName("anon") || byType("publishable");
+      const serviceRole = byName("service_role") || byType("secret");
+
+      if (!anon || !serviceRole) return null;
+      return {
+        anon,
+        serviceRole,
+        tipo: byName("anon") ? "legacy" : "nuevas (publishable/secret)",
+      };
+    };
+
     const legacy = await this.req("GET", `/v1/projects/${ref}/api-keys/legacy`);
     if (legacy.ok && legacy.json) {
       const anon = legacy.json.anon_key || legacy.json.anonKey;
@@ -125,17 +140,16 @@ export class SupabaseAdmin {
       if (anon && service) return { ok: true, url, anon, serviceRole: service, tipo: "legacy" };
     }
 
-    const todas = await this.req("GET", `/v1/projects/${ref}/api-keys?reveal=true`);
-    if (!todas.ok) return { ok: false, error: todas.error };
+    const ordinary = await this.req("GET", `/v1/projects/${ref}/api-keys`);
+    const ordinaryKeys = parseKeyList(ordinary.json);
+    if (ordinary.ok && ordinaryKeys) return { ok: true, url, ...ordinaryKeys };
 
-    const lista = Array.isArray(todas.json) ? todas.json : [];
-    const porNombre = (n) => lista.find((k) => k.name === n)?.api_key;
-    const porTipo = (t) => lista.find((k) => k.type === t)?.api_key;
+    const revealed = await this.req("GET", `/v1/projects/${ref}/api-keys?reveal=true`);
+    if (!revealed.ok) return { ok: false, error: revealed.error };
 
-    const anon = porNombre("anon") || porTipo("publishable");
-    const serviceRole = porNombre("service_role") || porTipo("secret");
+    const revealedKeys = parseKeyList(revealed.json);
 
-    if (!anon || !serviceRole) {
+    if (!revealedKeys) {
       return {
         ok: false,
         error:
@@ -146,9 +160,7 @@ export class SupabaseAdmin {
     return {
       ok: true,
       url,
-      anon,
-      serviceRole,
-      tipo: porNombre("anon") ? "legacy" : "nuevas (publishable/secret)",
+      ...revealedKeys,
     };
   }
 
@@ -180,18 +192,23 @@ export class SupabaseAdmin {
       ref,
       "select version from supabase_migrations.schema_migrations order by version;",
     );
-    if (!r.ok) return new Set();
+    if (!r.ok) {
+      throw new Error(`No pude leer las migraciones aplicadas: ${r.error || "respuesta inválida"}`);
+    }
     const filas = Array.isArray(r.json) ? r.json : r.json?.result || [];
     return new Set(filas.map((f) => String(f.version)));
   }
 
-  async marcarMigracion(ref, version, nombre) {
+  async aplicarMigracion(ref, { version, name, sql }) {
     const esc = (s) => String(s).replace(/'/g, "''");
     return this.sql(
       ref,
-      `insert into supabase_migrations.schema_migrations (version, name)
-       values ('${esc(version)}', '${esc(nombre)}')
-       on conflict (version) do nothing;`,
+      `begin;
+${String(sql).trim()}
+;
+insert into supabase_migrations.schema_migrations (version, name)
+values ('${esc(version)}', '${esc(name)}');
+commit;`,
     );
   }
 

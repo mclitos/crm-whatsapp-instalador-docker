@@ -17,10 +17,11 @@ import {
   ROOT, C, ok, info, warn, encabezado, titulo, morir, leerEnv, escribirEnv,
   pedir, dormir, progreso, rutaCredenciales,
 } from "./lib/ui.mjs";
+import { resolveTunnelPort } from "./lib/tunnel-port.mjs";
 
 const CREDS = rutaCredenciales();
 const LOG = resolve(ROOT, "tunel.log");
-const PUERTO = process.env.PORT || "3000";
+const PUERTO = resolveTunnelPort();
 
 writeFileSync(LOG, "");
 

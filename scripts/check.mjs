@@ -10,18 +10,23 @@
  * Las consultas contra la Graph API están validadas contra la API real.
  */
 
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 import {
   ROOT, CRM_DIR, C, ok, fail, warn, info, encabezado, titulo,
   leerEnv, leerEstado, enmascarar, problemas, pedir, rutaCredenciales,
 } from "./lib/ui.mjs";
+import { reportWebhookChallenge } from "./lib/check-webhook.mjs";
+import { inspectCrmWorkspace, reportCrmWorkspace } from "./lib/check-workspace.mjs";
+import { inspectDockerSupabase, reportDockerSupabase } from "./lib/supabase-diagnostic.mjs";
 import { SupabaseAdmin } from "./lib/supabase.mjs";
 import { Meta, PERMISOS_NECESARIOS, errorDe } from "./lib/meta.mjs";
 
 const creds = leerEnv(rutaCredenciales());
-const envCrm = leerEnv(resolve(CRM_DIR, ".env.local"));
 const estado = leerEstado();
+const crmWorkspace = inspectCrmWorkspace({
+  crmDirectory: CRM_DIR,
+  directory: ROOT,
+  readEnvironment: leerEnv,
+});
 
 const publicUrl = (creds.PUBLIC_URL || "").replace(/\/+$/, "");
 
@@ -30,26 +35,18 @@ encabezado("Diagnóstico del CRM de WhatsApp");
 // ── 1. archivos ─────────────────────────────────────────────────────────────
 titulo("1. Archivos");
 
-if (existsSync(CRM_DIR)) ok("./crm clonado");
-else fail("./crm no existe", "corré: npm run paso1");
-
-if (existsSync(resolve(CRM_DIR, ".env.local"))) ok("crm/.env.local existe");
-else fail("crm/.env.local no existe", "corré: npm run paso1");
-
-for (const k of ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "ENCRYPTION_KEY", "META_APP_SECRET"]) {
-  if (envCrm[k]) ok(k, k.includes("KEY") || k.includes("SECRET") ? enmascarar(envCrm[k]) : envCrm[k]);
-  else fail(`${k} vacía en crm/.env.local`, "corré: npm run paso1");
-}
-if (envCrm.ENCRYPTION_KEY && !/^[a-f0-9]{64}$/i.test(envCrm.ENCRYPTION_KEY)) {
-  fail("ENCRYPTION_KEY no son 64 caracteres hexadecimales", "tiene que ser exactamente 32 bytes en hex");
-}
+reportCrmWorkspace(crmWorkspace, { fail, mask: enmascarar, ok, warn });
 
 // ── 2. Supabase ─────────────────────────────────────────────────────────────
 titulo("2. Supabase");
 
 const ref = creds.SUPABASE_PROJECT_REF || estado.projectRef;
 if (!creds.SUPABASE_ACCESS_TOKEN || !ref) {
-  warn("Sin token o sin project ref — salteo Supabase", "corré: npm run paso1");
+  if (crmWorkspace.mode === "docker") {
+    reportDockerSupabase(inspectDockerSupabase({ directory: ROOT }), { fail, ok, warn });
+  } else {
+    warn("Sin token o sin project ref — salteo Supabase", "corré: npm run paso1");
+  }
 } else {
   const supa = new SupabaseAdmin(creds.SUPABASE_ACCESS_TOKEN);
 
@@ -78,9 +75,13 @@ if (!creds.SUPABASE_ACCESS_TOKEN || !ref) {
       fail(`No pude consultar la base: ${tablas.error}`);
     }
 
-    const mig = await supa.migracionesAplicadas(ref);
-    if (mig.size) ok(`${mig.size} migraciones registradas`, `hasta la ${[...mig].sort().at(-1)}`);
-    else warn("No hay migraciones registradas", "puede que las hayas aplicado a mano");
+    try {
+      const mig = await supa.migracionesAplicadas(ref);
+      if (mig.size) ok(`${mig.size} migraciones registradas`, `hasta la ${[...mig].sort().at(-1)}`);
+      else warn("No hay migraciones registradas", "puede que las hayas aplicado a mano");
+    } catch (error) {
+      fail("No pude leer el historial de migraciones", error.message);
+    }
 
     const auth = await supa.authConfig(ref);
     if (auth.ok) {
@@ -228,9 +229,12 @@ if (!publicUrl) {
     try {
       const res = await pedir(u, {}, 15000);
       const cuerpo = (await res.text()).trim();
-      if (res.ok && cuerpo === desafio) ok("El webhook devuelve el desafío", "el apretón de manos funciona");
-      else if (res.status === 403) fail("El webhook devuelve 403", `el verify token guardado en el CRM no es ${creds.VERIFY_TOKEN}`);
-      else fail(`El webhook devolvió ${res.status}`, "revisá Settings → WhatsApp en el CRM");
+      reportWebhookChallenge({
+        body: cuerpo,
+        challenge: desafio,
+        responseOk: res.ok,
+        status: res.status,
+      }, { fail, ok });
     } catch (e) {
       fail(`No pude probar el webhook: ${e.message}`);
     }

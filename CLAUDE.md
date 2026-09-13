@@ -1,8 +1,20 @@
-# Briefing para Claude Code
+# Briefing de crm-whatsapp-instalador-docker para Claude Code
 
-Este repo es un **instalador**, no una aplicación. Instala
-[wacrm](https://github.com/ArnasDon/wacrm) — un CRM de WhatsApp open source
-(MIT) — automatizando todo lo que se puede automatizar de su puesta en marcha.
+Este repositorio es un **instalador independiente**, no el CRM ni una copia
+incluida de su código. Automatiza Docker y Supabase para instalar
+[wacrm](https://github.com/ArnasDon/wacrm), un CRM de WhatsApp open source con
+licencia MIT.
+
+Hay tres identidades que no deben confundirse:
+
+1. `ArnasDon/wacrm` es el CRM original.
+2. `mclitos/wacrm` es el fork mantenido que se clona de forma predeterminada
+   para dar una base de instalación controlada. Puede reemplazarse mediante
+   `CRM_REPO_URL`.
+3. `mclitos/crm-whatsapp-instalador-docker` es este instalador independiente.
+
+Supabase sigue siendo el backend de base de datos y autenticación. Docker
+ejecuta el instalador y administra el ciclo de vida del CRM.
 
 ---
 
@@ -16,10 +28,15 @@ quiere tocar la terminal ni escribir un comando — para eso te tiene a vos.
 que le preguntes, y hace unos clics en Meta y Supabase cuando se lo pidas.
 
 ```bash
-git clone https://github.com/mclitos/crm-whatsapp-instalador.git
-cd crm-whatsapp-instalador
-npm run creds        # te dice qué credenciales faltan y de dónde salen
+git clone https://github.com/mclitos/crm-whatsapp-instalador-docker.git
+cd crm-whatsapp-instalador-docker
+npm run levantar -- --docker
 ```
+
+La ruta Docker es la opción recomendada. La consola muestra un token de un solo
+uso; la persona abre `http://localhost:3300`, configura Supabase y espera a que
+el CRM aparezca en esa misma dirección. Meta se configura después y requiere
+acciones manuales del propietario de la cuenta.
 
 Nunca le digas "ahora corré X". Corrélo y contale qué pasó.
 
@@ -34,9 +51,10 @@ pegarte un error suelto.
 
 **Ante el primer mensaje, sea cual sea:**
 
-1. **Mirá en qué estado está la instalación** antes de hablar: ¿existe
-   `credenciales.env` (o `credenciales.ruta`)? ¿existe `crm/`? Si hay algo
-   arrancado, `npm run check` te dice exactamente dónde quedó.
+1. **Revisá el estado de la instalación** antes de responder: comprobá los
+   servicios y volúmenes de Docker, y después `credenciales.env`,
+   `credenciales.ruta` o `crm/` si se utilizó el flujo local. `npm run check`
+   indica dónde quedó el proceso.
 2. **Si no hay nada empezado**, presentate en dos líneas —qué es esto y cuánto
    tarda— y ofrecé arrancar. No pidas permiso tres veces.
 3. **Si hay algo a medias**, decile en qué punto está y cuál es el próximo paso.
@@ -61,8 +79,11 @@ scripts/
   levantar.mjs        npm install + arranque (Docker si hay, Node si no)
   check.mjs           diagnóstico completo, solo lectura
   instalar.mjs        encadena todo
+  web.mjs              instalador web local y base del modo Docker
+compose.yaml            ciclo del instalador y del CRM en el puerto 3300
+Dockerfile              imagen sin privilegios para ambos servicios
 docs/                 01-meta · 02-supabase · 03-deploy · 04-costos · 05-gotchas
-crm/                  clon del upstream (gitignoreado, no versionado acá)
+crm/                  clon local del CRM (gitignoreado, no versionado aquí)
 credenciales.env      secretos del usuario (gitignoreado)
 ```
 
@@ -74,15 +95,18 @@ que no programa es una instalación perdida.
 
 ## Reglas
 
-1. **No versiones `crm/`.** Se clona fresco del upstream en cada instalación.
-   Ese es el punto de diseño central: el proyecto se mueve rápido (pasó de 26 a
-   39 migraciones en pocos meses), así que **lo que envejece es el código y lo
-   que no envejece es el instalador**. Si alguien te pide "dejar el CRM ya
-   configurado adentro del repo", explicá por qué eso lo rompe en dos meses.
+1. **No incluyas ni versiones `crm/`.** El origen predeterminado es
+   `https://github.com/mclitos/wacrm.git`, fork mantenido de
+   `ArnasDon/wacrm`. El código se clona durante la instalación y puede usarse
+   otro origen mediante `CRM_REPO_URL`. Incluir una copia congelada haría que el
+   instalador envejeciera con el CRM.
 
 2. **No rotes la `ENCRYPTION_KEY`.** El paso 1 la conserva si ya existía.
    Rotarla deja ilegibles todos los tokens de WhatsApp ya guardados y obliga a
    reconectar a mano. Está comentado en el código: no lo "simplifiques".
+
+   En Docker, tampoco uses `docker compose down -v` si se debe conservar la
+   instalación: esa opción elimina los volúmenes persistentes.
 
 3. **No repliques la encriptación del CRM.** Los cuatro valores de WhatsApp se
    cargan a mano en `Settings → WhatsApp` porque ese formulario los encripta con
@@ -129,7 +153,8 @@ que no programa es una instalación perdida.
   token distinto, 404 = app caída). Ver `paso2-meta.mjs` sección 5.
 - **`sa-east-1` por defecto** al crear el proyecto: es la región más cercana
   para el cono sur.
-- **Docker es opcional.** `levantar.mjs` detecta si está y si no usa Node.
+- **Docker es la ruta recomendada.** `levantar.mjs` conserva Node como
+  alternativa local cuando Docker no está disponible.
 
 ---
 

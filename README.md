@@ -1,266 +1,304 @@
-# CRM de WhatsApp — instalador
+# crm-whatsapp-instalador-docker
 
-Montá tu propio CRM de WhatsApp: bandeja compartida para todo tu equipo, embudo
-de ventas, campañas de difusión, automatizaciones y asistente de IA. Corriendo
-en tu servidor, con tu base de datos, con la API oficial de Meta.
+Instalador independiente para poner en marcha un CRM de WhatsApp con Docker y
+Supabase. Automatiza el aprovisionamiento de Supabase, prepara el código del CRM
+y gestiona su arranque sin incluir una copia del CRM en este repositorio.
 
-**El CRM es [wacrm](https://github.com/ArnasDon/wacrm), open source y MIT.**
-Esto es el instalador: convierte 41 pasos manuales en cuatro credenciales y un
-comando.
+El CRM instalado es wacrm: ofrece una bandeja compartida para equipos, embudo de
+ventas, campañas, automatizaciones y asistente de IA. El instalador evita aplicar
+manualmente cerca de 39 migraciones SQL. Una instalación normal suele tardar
+alrededor de 20 minutos, aunque el tiempo depende de Docker, Supabase y la
+conexión a internet.
 
----
+> **Resultado:** el instalador se abre en `http://localhost:3300`, configura
+> Supabase y, al terminar, entrega esa misma dirección al CRM.
 
-<!-- ══════════════════════════════════════════════════════════════════════
-     SI SOS UN ASISTENTE DE IA LEYENDO ESTO (Claude Code o similar):
-     La persona quiere montar su CRM y probablemente no programa.
-     NO le pidas que corra comandos: corrélos vos.
-     1. Leé CLAUDE.md (está en la raíz de este repo) — es tu briefing.
-     2. Seguí .claude/skills/instalar-crm/SKILL.md — tiene el flujo completo,
-        los errores típicos y cómo hablarle.
-     3. Arrancá por `npm run creds`, que le dice qué credenciales necesita
-        y de dónde sacar cada una.
-     Una cosa a la vez. No le vuelques la lista entera de pasos.
-     ══════════════════════════════════════════════════════════════════════ -->
+## Inicio rápido con Docker
 
-> ### 👋 ¿No sabés programar? Esto es para vos
->
-> **No vas a escribir un solo comando.** Se lo pedís a Claude y él lo hace todo.
->
-> **1.** Instalá [Claude Code](https://claude.com/claude-code). Si no querés
-> saber nada con la terminal, bajá la **app de escritorio**: es una ventana
-> normal donde escribís.
-> **2.** Instalá [Node.js](https://nodejs.org) (botón verde, LTS) y
-> [git](https://git-scm.com). Siguiente, siguiente, siguiente, y **reiniciá**.
-> **3.** Creá una carpeta vacía en cualquier lado y abrila con Claude Code.
-> **4.** Pegale esto y mandá:
->
-> ```
-> Instalame este CRM: https://github.com/mclitos/crm-whatsapp-instalador
-> ```
->
-> Y ya está. Él lo descarga, lee las instrucciones que vienen adentro y te va
-> pidiendo una cosa a la vez. Lo único que vas a tener que hacer vos son unos
-> clics en las páginas de Meta y Supabase, y él te dice exactamente dónde.
->
-> Si algo falla, se lo contás con tus palabras y lo arregla. No hace falta que
-> entiendas nada de lo que sigue en esta página.
->
-> *(¿Preferís hacerlo vos, con la terminal? También se puede:
-> mirá [Empezar](#empezar) más abajo.)*
-
----
-
-## Por qué existe
-
-El tutorial que anda dando vueltas para montar este CRM tiene 41 pasos, cruza
-seis paneles distintos y —el peor tramo— te hace **copiar y pegar 39 archivos
-SQL, uno por uno**, en el editor de Supabase. Entre dos y cuatro horas si nunca
-lo hiciste, con abandono garantizado en la mitad.
-
-Casi todo eso es automatizable. Esto lo automatiza.
-
-|  | A mano | Con el instalador |
-|---|---|---|
-| Pasos | ~41 | **4 credenciales + 1 comando** |
-| Archivos SQL a pegar | 39 | **0** |
-| Paneles que tocás | 6 | **2** (Meta y Supabase, una vez) |
-| Tiempo | 2–4 h | **15–25 min** |
-
-Además arregla de entrada dos cosas que el tutorial deja rotas:
-
-- **El mail de confirmación que apunta a `localhost:3000`.** El video te enseña a
-  editar la URL a mano cada vez. No es un bug del CRM: es el *Site URL* de
-  Supabase sin configurar. Acá se configura solo.
-- **El token que dura 24 horas.** Muchísima gente copia el token temporal del
-  Quickstart y al día siguiente el CRM deja de andar sin explicación. El
-  diagnóstico te avisa antes.
-
-Y te dice **lo que realmente cuesta** → [`docs/04-costos.md`](docs/04-costos.md).
-Spoiler: el 1 de octubre de 2026 Meta empieza a cobrar las respuestas.
-
----
-
-## Empezar
-
-Hay dos caminos y **los dos llegan al mismo lugar**. Elegí por comodidad, no
-por nivel técnico.
-
-Los dos necesitan [Node.js](https://nodejs.org) versión 20 o más y
-[git](https://git-scm.com). Se instalan con siguiente, siguiente, siguiente.
-
-> Después de instalarlos, **cerrá la terminal y abrí una nueva**. Si no, el
-> sistema sigue sin encontrarlos y parece que no se instalaron.
-
-### a) Con Claude Code — recomendado si no programás
-
-1. Instalá [Claude Code](https://claude.com/claude-code). Va en la terminal,
-   pero si no querés saber nada con la consola existe la **aplicación de
-   escritorio**: es una ventana normal donde escribís.
-2. Descargá este repo:
-   ```bash
-   git clone https://github.com/mclitos/crm-whatsapp-instalador.git
-   ```
-3. **Abrí esa carpeta con Claude Code y escribile:**
-
-   > instalá el CRM
-
-Y ya está. Claude lee las instrucciones que vienen en el repo, te va pidiendo
-una cosa a la vez, y **cuando algo falla lo arregla** en vez de dejarte con un
-error en pantalla. Podés preguntarle cualquier cosa en el camino: por qué te
-pide algo, qué significa un término, si podés saltear un paso.
-
-### b) Vos solo, con la terminal
-
-Exactamente lo mismo, sin Claude en el medio:
+Con [Git](https://git-scm.com), [Node.js 20 o posterior](https://nodejs.org) y
+[Docker](https://www.docker.com/products/docker-desktop/) instalados, ejecute:
 
 ```bash
-git clone https://github.com/mclitos/crm-whatsapp-instalador.git
-cd crm-whatsapp-instalador
+git clone https://github.com/mclitos/crm-whatsapp-instalador-docker.git
+cd crm-whatsapp-instalador-docker
+npm run levantar -- --docker
+```
+
+La consola mostrará un **token de configuración de un solo uso**. Después:
+
+1. Abra `http://localhost:3300`.
+2. Introduzca el token mostrado en la consola.
+3. Conecte su cuenta de Supabase.
+4. Elija un proyecto existente o cree uno nuevo.
+5. Confirme la configuración y espere a que aparezca el acceso al CRM.
+
+El instalador aplica las migraciones, comprueba el esquema, configura Auth y
+genera el entorno del CRM. **Supabase es la base de datos y el backend de
+autenticación del CRM.**
+
+La configuración de Meta y del número de WhatsApp se realiza después. Consulte
+[`docs/01-meta.md`](docs/01-meta.md) cuando el CRM ya esté funcionando.
+
+> **Importante:** no ejecute `docker compose down -v` si desea conservar la
+> instalación. La opción `-v` elimina los volúmenes con la configuración y el
+> código preparado del CRM.
+
+## Qué proyecto es cada uno
+
+| Proyecto | Función |
+|---|---|
+| [`ArnasDon/wacrm`](https://github.com/ArnasDon/wacrm) | CRM original de WhatsApp, publicado con licencia MIT. |
+| [`mclitos/wacrm`](https://github.com/mclitos/wacrm) | Fork mantenido que el instalador clona de forma predeterminada para dar una base de instalación controlada. |
+| [`mclitos/crm-whatsapp-instalador-docker`](https://github.com/mclitos/crm-whatsapp-instalador-docker) | Este proyecto independiente: automatiza Docker y Supabase. No es el CRM ni una copia incluida de su código. |
+
+El origen predeterminado del CRM es
+`https://github.com/mclitos/wacrm.git`. Puede sustituirse sin cambiar el
+instalador mediante `CRM_REPO_URL`. Docker Compose lee esta variable del entorno
+o de un archivo `.env` local ignorado por Git. Los flujos locales por consola
+que utilizan `credenciales.env` también pueden leerla desde ese archivo.
+
+El uso del fork mantenido no cambia la autoría ni la licencia del proyecto
+original. Tampoco implica una garantía permanente de disponibilidad o
+estabilidad: revise los cambios antes de actualizar una instalación en
+producción.
+
+<!--
+  ASISTENTES DE IA:
+  La persona probablemente no programa. Lean CLAUDE.md y sigan
+  .claude/skills/instalar-crm/SKILL.md. Ejecuten ustedes los comandos y presenten
+  una sola acción cada vez. La ruta recomendada es Docker.
+-->
+
+## Si no programa
+
+Puede abrir una carpeta vacía con Claude Code u otro asistente capaz de trabajar
+con archivos y pegar este mensaje:
+
+```text
+Instala este CRM con Docker y guíame paso a paso:
+https://github.com/mclitos/crm-whatsapp-instalador-docker
+```
+
+El asistente debe descargar el repositorio, ejecutar los comandos y solicitar
+solo los datos o clics que no pueda completar. No es necesario copiar comandos
+manualmente.
+
+## Requisitos
+
+| Requisito | Para qué se utiliza |
+|---|---|
+| Docker Desktop o Docker Engine con Compose | Ejecutar el instalador y el CRM. |
+| Node.js 20 o posterior | Ejecutar el comando que coordina el ciclo Docker. |
+| Git | Descargar este instalador y el repositorio del CRM. |
+| Cuenta de Supabase | Base de datos y autenticación. Puede usarse un proyecto existente o crear uno. |
+| Cuenta de Meta Business | Conectar WhatsApp después de instalar el CRM. |
+
+Después de instalar Git, Node.js o Docker, cierre y vuelva a abrir la terminal
+para que el sistema reconozca los nuevos programas.
+
+## Qué ocurre durante la instalación Docker
+
+Docker utiliza una sola dirección para todo: `http://localhost:3300`.
+
+1. Inicia un instalador web temporal protegido por token.
+2. Guarda de forma cifrada el token de Supabase, el Project Ref y, si crea un
+   proyecto, la contraseña de la base de datos.
+3. Clona `mclitos/wacrm` dentro de un volumen Docker, salvo que se haya definido
+   `CRM_REPO_URL`.
+4. Aplica únicamente las migraciones pendientes, verifica el esquema, configura
+   Supabase Auth y escribe `.env.local`.
+5. Retira el instalador temporal y arranca el CRM en la misma dirección.
+
+El cambio entre ambos servicios puede dejar el enlace brevemente sin respuesta.
+En el primer arranque, el CRM instala dependencias y construye la aplicación;
+los reinicios posteriores reutilizan el resultado cuando el código y el entorno
+no han cambiado.
+
+Para consultar el avance sin mostrar secretos:
+
+```bash
+docker compose logs -f crm
+```
+
+### Persistencia y aislamiento
+
+Los volúmenes separan responsabilidades:
+
+- `installer-data` conserva la clave maestra y las credenciales cifradas.
+- `crm-source` conserva el código, `.env.local`, las dependencias y el build del
+  CRM.
+
+El servicio de ejecución única y acotado `crm-workspace-init` se ejecuta como
+root solamente para asignar al usuario `1000:1000` la propiedad del volumen.
+Después termina. Los servicios `installer` y `crm` se ejecutan como ese usuario
+sin privilegios; `crm` solo monta `crm-source` y no puede leer `/data` ni los
+secretos internos del instalador. No se monta el socket de Docker ni se usa
+Docker-in-Docker.
+
+El token de configuración se consume al utilizarlo y no se guarda junto con las
+credenciales de Supabase. Para automatización, puede definir
+`WEB_INSTALLER_SETUP_TOKEN` en un archivo `.env` local ignorado por Git; en ese
+caso, el instalador utiliza ese valor y no lo imprime.
+
+### Reinicio, recuperación y reconfiguración
+
+Si el proceso se interrumpe, vuelva a ejecutar:
+
+```bash
+npm run levantar -- --docker
+```
+
+Los pasos completados no se duplican. Un workspace vigente se detecta antes de
+modificar Supabase. Para seleccionar otro proyecto o cambiar de forma deliberada
+la URL pública:
+
+```bash
+npm run levantar -- --docker --reconfigure
+```
+
+El instalador no ejecuta dos configuraciones al mismo tiempo. Si Supabase pudo
+crear un proyecto pero no se guardó su referencia, revise el panel de Supabase
+antes de volver a intentar la creación para evitar proyectos duplicados.
+
+### Acceso desde la red local
+
+Para abrir el instalador desde otro equipo de la red, cree un archivo `.env`
+ignorado por Git con la IP exacta de la interfaz local. No utilice `0.0.0.0`:
+
+```dotenv
+HOST_BIND_ADDRESS=192.168.1.50
+PUBLIC_HOST=192.168.1.50
+WEB_INSTALLER_SETUP_TOKEN=ejemplo-sintetico-no-es-secreto-000000000000
+```
+
+El instalador y el CRM usarán `http://192.168.1.50:3300`. HTTP sobre una IP
+privada solo es apropiado para pruebas dentro de la red local. El webhook de
+Meta y un despliegue real requieren una URL pública HTTPS.
+
+## Paso posterior: conectar Meta y WhatsApp
+
+El instalador deja Supabase y el CRM preparados, pero Meta todavía requiere
+acciones del propietario de la cuenta:
+
+1. Crear o seleccionar la aplicación de Meta.
+2. Generar el token permanente del usuario del sistema.
+3. Configurar el webhook y el número.
+4. Introducir los valores en `Settings → WhatsApp` del CRM.
+
+El formulario del CRM cifra esos valores con AES-256-GCM antes de guardarlos.
+El instalador no escribe directamente en `whatsapp_config` para evitar depender
+de un detalle interno del CRM. Consulte [`docs/01-meta.md`](docs/01-meta.md) y,
+en el flujo clásico, ejecute `npm run paso2`.
+
+## Seguridad de credenciales
+
+- `credenciales.env`, `credenciales.ruta`, `.web-installer/`, `.env` y los
+  archivos de entorno del CRM están ignorados por Git según el flujo que los
+  utiliza.
+- Los secretos del instalador web se guardan cifrados con AES-256-GCM y una
+  clave maestra separada.
+- Nunca publique tokens, contraseñas, claves de servicio ni archivos de entorno,
+  aunque el repositorio sea privado.
+- **No rote `ENCRYPTION_KEY` en una instalación existente.** Si cambia esa
+  clave, los tokens de WhatsApp ya cifrados dejan de ser legibles y será
+  necesario conectar la cuenta de nuevo.
+- **No use `docker compose down -v`** para detener una instalación que desee
+  conservar. Use `docker compose down` sin `-v`.
+
+## Alternativas y herramientas avanzadas
+
+### Instalador web local sin Docker
+
+```bash
+npm run web
+```
+
+Abre el instalador en `http://127.0.0.1:7359`, prepara Supabase y escribe el CRM
+en `./crm`. Después, `npm run levantar -- --node` inicia el CRM localmente. Este
+flujo no modifica `credenciales.env`.
+
+### Flujo clásico por consola
+
+```bash
 npm run instalar
 ```
 
-También te lleva de la mano y frena donde necesita algo tuyo. Cada comando se
-puede correr suelto y **repetir sin romper nada**: si algo se corta, arreglás y
-volvés a correr desde donde quedaste.
+El proceso solicita las credenciales y encadena los pasos clásicos. También
+pueden ejecutarse por separado:
 
-La única diferencia real entre los dos caminos aparece cuando algo sale mal: en
-el (a) tenés a alguien que lee el error y lo resuelve; en el (b) tenés
-[`docs/05-gotchas.md`](docs/05-gotchas.md), que cubre los errores conocidos con
-su causa y su arreglo.
-
----
-
-## Los cuatro datos que tenés que conseguir
-
-Son los únicos que ningún programa puede sacar por vos: **no existe API para
-crear una app de Meta ni para generar el token de un System User**. Diez
-minutos, una sola vez, con el camino de clics exacto en
-[`docs/01-meta.md`](docs/01-meta.md).
-
-| Dato | De dónde sale |
+| Comando | Función |
 |---|---|
-| **Token de Supabase** | `supabase.com/dashboard/account/tokens` → un clic |
-| **App ID** y **App Secret** | `developers.facebook.com` → tu app → Configuración → Básica |
-| **Token permanente** | `business.facebook.com` → Usuarios del sistema → Generar token |
+| `npm run creds` | Valida las credenciales y explica qué falta. |
+| `npm run paso1` | Prepara Supabase, las migraciones y el entorno del CRM. |
+| `npm run levantar` | Elige Docker si está disponible o Node en caso contrario. |
+| `npm run levantar -- --docker` | Ejecuta el ciclo recomendado con Docker. |
+| `npm run levantar -- --node` | Inicia el CRM local con Node. |
+| `npm run paso2` | Configura la integración de Meta después del despliegue. |
+| `npm run check` | Ejecuta el diagnóstico de punta a punta; en Docker revisa Supabase desde un contenedor efímero sin mostrar credenciales. |
+| `npm run tunel` | Crea una URL pública temporal; detecta Docker en 3300 o Node en 3000, salvo que se defina `PORT`. |
+| `npm run vps` | Prepara el despliegue en un servidor con HTTPS. |
+| `npm run vincular` | Vincula un archivo de credenciales externo. |
 
-Van en `credenciales.env` (que está en `.gitignore`).
+Los scripts están diseñados para poder repetirse sin duplicar los pasos ya
+completados.
 
----
+### Credenciales en más de un equipo
 
-## Qué hace solo
-
-**Supabase** — crea el proyecto, espera a que arranque, saca las tres llaves,
-**aplica las ~39 migraciones en orden**, corre la verificación de esquema del
-propio proyecto, configura el Site URL de Auth, genera la clave de encriptación
-y escribe el `.env.local` completo.
-
-**Meta** — descubre tu cuenta de WhatsApp Business y tus números, prueba el
-apretón de manos del webhook, lo registra con la callback URL y el verify token,
-suscribe los campos correctos (incluido `messages`, el que todo el mundo se
-olvida), suscribe la app a la cuenta y registra el número si hace falta.
-
-**Diagnóstico** — `npm run check` revisa las dos puntas y te dice en castellano
-qué falta y cómo se arregla.
-
-### Lo que queda a mano (y por qué)
-
-Pegar cuatro valores en `Settings → WhatsApp` del CRM. Ese formulario encripta
-el token con tu clave antes de guardarlo, y replicar esa encriptación desde
-afuera sería atarnos a un detalle interno que puede cambiar en el próximo commit
-del proyecto. Son 30 segundos y una sola pantalla — preferimos eso a que se
-rompa solo dentro de dos meses.
-
----
-
-## Comandos
-
-| Comando | Qué hace |
-|---|---|
-| `npm run instalar` | Todo, encadenado |
-| `npm run creds` | Valida las credenciales y explica qué falta |
-| `npm run paso1` | Supabase completo |
-| `npm run levantar` | Instala dependencias y arranca el CRM |
-| `npm run tunel` | Le da una dirección pública temporal (para probar, sin cuenta en ningún lado) |
-| `npm run vps` | Lo deja andando en tu servidor con dominio propio y HTTPS |
-| `npm run paso2` | Conecta WhatsApp |
-| `npm run check` | Diagnóstico de punta a punta |
-| `npm run vincular` | Guarda las credenciales fuera del repo (dos máquinas, equipo) |
-
-Todos son **idempotentes**: si algo se rompe, arreglás y volvés a correr. Nada
-se duplica.
-
----
-
-## Si trabajás desde dos computadoras
-
-Las credenciales viven en `credenciales.env`, que **nunca se sube al repo** — y
-no es una precaución exagerada: git guarda el historial para siempre, así que
-borrarlo después no lo saca, y este repo está pensado para compartirse.
-
-Para no volver a cargarlas en cada máquina, guardalas en una carpeta
-sincronizada y dejá acá un puntero:
+`credenciales.env` nunca debe subirse al repositorio. Para mantener una sola
+copia fuera del proyecto:
 
 ```bash
-npm run vincular -- "C:\ruta\a\tu\carpeta\sincronizada\crm.env"
+npm run vincular -- "C:\ruta\a\la\carpeta\sincronizada\crm.env"
 ```
 
-Eso mueve el archivo, borra la copia del repo (una sola fuente de verdad) y
-anota la ubicación en `credenciales.ruta`, que también está en `.gitignore`.
+El comando mueve el archivo y registra su ubicación en `credenciales.ruta`, que
+también está ignorado por Git. `CRM_CREDENCIALES` puede apuntar al archivo de
+forma explícita y tiene prioridad.
 
-En la otra computadora, después de clonar: **el mismo comando con la misma
-ruta** y ya las tenés. Para volver atrás, `npm run vincular -- --deshacer`.
+La `ENCRYPTION_KEY` del flujo local vive en `crm/.env.local`, no en
+`credenciales.env`. Si WhatsApp ya está conectado, conserve esa clave al mover
+la instalación.
 
-> También podés apuntar la variable de entorno `CRM_CREDENCIALES` al archivo,
-> que tiene prioridad sobre todo lo demás.
+## Qué automatiza
 
-**Una advertencia si vas y venís entre máquinas:** la `ENCRYPTION_KEY` vive en
-`crm/.env.local`, no en `credenciales.env`. Si generás una nueva en la segunda
-computadora, los tokens de WhatsApp guardados desde la primera quedan
-ilegibles y hay que reconectar. Si ya conectaste WhatsApp, copiate esa línea
-a mano.
+**Supabase:** crea o reutiliza el proyecto, espera a que esté disponible,
+obtiene las claves, aplica las migraciones en orden, verifica el esquema,
+configura el Site URL de Auth y genera el entorno del CRM.
 
----
+**Meta, en el flujo clásico:** descubre la cuenta de WhatsApp Business y sus
+números, prueba el handshake del webhook, registra la callback, suscribe los
+campos necesarios y registra el número cuando corresponde.
+
+**Diagnóstico:** `npm run check` revisa ambos extremos y devuelve errores
+accionables sin imprimir secretos.
+
+## Costes y límites
+
+La licencia MIT permite usar y modificar el software, pero la infraestructura y
+los proveedores pueden tener costes. Supabase, el servidor y Meta aplican sus
+propios planes, límites y tarifas, que pueden cambiar. Este proyecto no promete
+un servicio gratuito permanente.
+
+Consulte [`docs/04-costos.md`](docs/04-costos.md) y confirme siempre los precios
+actuales en la documentación oficial antes de ofrecer el servicio a terceros.
+El uso de la API oficial de Meta tampoco evita suspensiones por incumplimiento de
+políticas, baja calidad o falta de consentimiento.
 
 ## Documentación
 
-| | |
+| Documento | Contenido |
 |---|---|
-| [`01-meta.md`](docs/01-meta.md) | Los tres pasos manuales de Meta, clic por clic |
-| [`02-supabase.md`](docs/02-supabase.md) | El token, y qué esperar del plan gratis |
-| [`03-deploy.md`](docs/03-deploy.md) | Probarlo con un túnel en 2 min, o deployarlo en serio |
-| [`04-costos.md`](docs/04-costos.md) | **Lo que de verdad cuesta.** Leelo antes de vender esto |
-| [`05-gotchas.md`](docs/05-gotchas.md) | Errores raros y qué los causa |
+| [`docs/01-meta.md`](docs/01-meta.md) | Configuración manual de Meta, paso a paso. |
+| [`docs/02-supabase.md`](docs/02-supabase.md) | Token, proyecto y consideraciones de Supabase. |
+| [`docs/03-deploy.md`](docs/03-deploy.md) | Túnel temporal y despliegue con HTTPS. |
+| [`docs/04-costos.md`](docs/04-costos.md) | Costes, límites y supuestos. |
+| [`docs/05-gotchas.md`](docs/05-gotchas.md) | Errores conocidos, causas y soluciones. |
 
----
+## Licencia y atribución
 
-## Dos advertencias honestas
+Este instalador se publica con licencia MIT. El CRM original
+[`ArnasDon/wacrm`](https://github.com/ArnasDon/wacrm) también usa la licencia
+MIT; al redistribuirlo deben conservarse su aviso de copyright y su archivo
+`LICENSE`.
 
-**"Es gratis" tiene fecha de vencimiento.** El software sí es gratis y es tuyo.
-Pero desde el **1/10/2026** Meta cobra los mensajes de servicio: las respuestas
-dentro de la ventana de 24 horas dejan de ser gratis. Un negocio con 70-80
-mensajes por día pasa a pagar del orden de USD 80-130 por mes. Está todo con
-números en [`docs/04-costos.md`](docs/04-costos.md).
-
-**"Con la API oficial no te banean" es falso.** Te salva del baneo *por usar API
-no oficial*. Por categoría de producto prohibida, calidad baja o escribir sin
-permiso te suspenden igual, con API oficial y todo.
-
----
-
-## Sobre el código
-
-Este instalador **no incluye el CRM**: lo clona fresco del repositorio oficial
-cuando lo corrés. Es a propósito. El proyecto se mueve rápido —pasó de 26 a 39
-migraciones en pocos meses— así que congelar una copia sería garantizar que
-quede vieja. Lo que envejece es el código; lo que no envejece es el instalador.
-
-Cero dependencias de npm: todo sale de Node.
-
-**wacrm es MIT**, así que podés usarlo, modificarlo, ponerle tu marca y venderlo.
-Lo único que la licencia exige es conservar el aviso de copyright y el archivo
-`LICENSE`. Vender el producto sí; borrar la atribución del repo no. Si querés
-trabajar sobre tu propio fork, mirá [`docs/03-deploy.md`](docs/03-deploy.md).
-
----
-
-Hecho por [IABYIA](https://iabyia.com.ar) · MIT
+Hecho por [IABYIA](https://iabyia.com.ar).

@@ -1,0 +1,102 @@
+services:
+  crm-workspace-init:
+    image: alpine:3.20
+    user: "0:0"
+    restart: "no"
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        chown -R 1000:1000 /workspace/crm
+    volumes:
+      - crm-source:/workspace/crm
+
+  installer:
+    build:
+      context: .
+    command:
+      - node
+      - /app/scripts/container/start-installer.mjs
+    profiles:
+      - setup
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:3300:7359"
+    init: true
+    restart: "no"
+    user: "1000:1000"
+    depends_on:
+      crm-workspace-init:
+        condition: service_completed_successfully
+    environment:
+      WEB_INSTALLER_HOST: "0.0.0.0"
+      WEB_INSTALLER_PORT: "7359"
+      WEB_INSTALLER_DATA_DIR: "/data/installer"
+      WEB_INSTALLER_SETUP_TOKEN: "${WEB_INSTALLER_SETUP_TOKEN:-}"
+      WEB_INSTALLER_ALLOWED_ORIGINS: "http://${PUBLIC_HOST:-localhost}:3300"
+      CRM_REPO_URL: "${CRM_REPO_URL:-https://github.com/mclitos/wacrm.git}"
+      CRM_WORKSPACE_DIR: "/workspace/crm"
+      CRM_AUTO_START: "1"
+      CRM_PUBLIC_URL_DEFAULT: "http://${PUBLIC_HOST:-localhost}:3300"
+    volumes:
+      - installer-data:/data
+      - crm-source:/workspace/crm
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:7359/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  crm:
+    build:
+      context: .
+    profiles:
+      - runtime
+    command:
+      - node
+      - /app/scripts/container/start-crm.mjs
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:3300:3000"
+    init: true
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      crm-workspace-init:
+        condition: service_completed_successfully
+    environment:
+      CRM_WORKSPACE_DIR: "/workspace/crm"
+    volumes:
+      - crm-source:/workspace/crm
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20m
+
+  diagnostics:
+    build:
+      context: .
+    command:
+      - node
+      - /app/scripts/container/check-supabase.mjs
+    profiles:
+      - diagnostics
+    restart: "no"
+    user: "1000:1000"
+    environment:
+      WEB_INSTALLER_DATA_DIR: "/data/installer"
+    volumes:
+      - installer-data:/data:ro
+
+volumes:
+  installer-data:
+  crm-source:
