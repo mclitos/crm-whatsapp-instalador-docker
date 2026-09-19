@@ -46,6 +46,7 @@ const defaultRunCommand = (command, args, options) => execFileSync(command, args
   maxBuffer: 1024 * 1024,
   shell: false,
   stdio: ["ignore", "pipe", "pipe"],
+  timeout: 240000,
 });
 
 const parseComposeServices = (output) => {
@@ -59,12 +60,40 @@ const parseComposeServices = (output) => {
   }
 };
 
+const readDockerProbe = (output) => {
+  // `compose run` arranca el entrypoint de la imagen: cualquier línea suya
+  // precede al JSON de la sonda, así que nos quedamos con la última.
+  const lines = output.trim().split(/\r?\n/u).filter((line) => line.trim());
+  const probe = JSON.parse(lines[lines.length - 1]);
+  if (!probe?.checkout || !probe?.environmentFile) return null;
+  return {
+    configuredVariables: Array.isArray(probe.configuredVariables)
+      ? probe.configuredVariables.filter((key) => REQUIRED_CRM_ENV_KEYS.includes(key))
+      : [],
+    encryptionKeyValid: probe.encryptionKeyValid === null
+      ? null
+      : probe.encryptionKeyValid === true,
+  };
+};
+
+const incompleteVolume = {
+  status: "invalid",
+  message: "El volumen Docker del CRM está incompleto",
+  action: "corré: npm run levantar -- --docker --reconfigure",
+};
+
+const unreadableVolume = {
+  status: "invalid",
+  message: "No pude revisar los archivos del volumen Docker",
+  action: "revisá: docker compose ps y docker compose logs crm",
+};
+
 const inspectDockerWorkspace = ({ directory, runCommand }) => {
   let services;
   try {
     const output = runCommand(
       "docker",
-      ["compose", "ps", "--format", "json", "crm"],
+      ["compose", "ps", "--all", "--format", "json", "crm"],
       { cwd: directory },
     );
     services = parseComposeServices(output);
@@ -76,6 +105,8 @@ const inspectDockerWorkspace = ({ directory, runCommand }) => {
     };
   }
 
+  // `--all` incluye contenedores detenidos: un CRM apagado sigue siendo una
+  // instalación Docker válida, y sus archivos viven en el volumen, no acá.
   const service = services.find((candidate) => candidate?.Service === "crm");
   if (!service) {
     return {
@@ -84,43 +115,34 @@ const inspectDockerWorkspace = ({ directory, runCommand }) => {
       action: "corré: npm run levantar -- --docker",
     };
   }
-  if (service.State !== "running" || service.Health !== "healthy") {
-    return {
-      status: "unavailable",
-      message: "El servicio Docker crm no está saludable",
-      action: "revisá: docker compose ps y docker compose logs crm",
-    };
-  }
 
+  // Un contenedor corriendo pero enfermo no está apagado: se sondea igual con
+  // `exec` —no duplicamos un contenedor sobre un volumen en uso— y se reporta
+  // con su propio diagnóstico en vez de confundirlo con uno detenido.
+  const running = service.State === "running";
+  const containerState = running
+    ? (service.Health === "healthy" ? "healthy" : "unhealthy")
+    : "stopped";
   try {
-    const output = runCommand(
-      "docker",
-      ["compose", "exec", "-T", "crm", "node", "-e", dockerProbe],
-      { cwd: directory },
-    );
-    const probe = JSON.parse(output.trim());
-    if (!probe?.checkout || !probe?.environmentFile) {
-      return {
-        status: "invalid",
-        message: "El volumen Docker del CRM está incompleto",
-        action: "corré: npm run levantar -- --docker --reconfigure",
-      };
-    }
-    return {
-      status: "ready",
-      configuredVariables: Array.isArray(probe.configuredVariables)
-        ? probe.configuredVariables.filter((key) => REQUIRED_CRM_ENV_KEYS.includes(key))
-        : [],
-      encryptionKeyValid: probe.encryptionKeyValid === null
-        ? null
-        : probe.encryptionKeyValid === true,
-    };
+    // Con el contenedor vivo alcanza con `exec`. Detenido, montamos el mismo
+    // volumen en un contenedor descartable: nunca inventamos un workspace
+    // ausente solo porque el CRM no está corriendo.
+    const output = running
+      ? runCommand(
+        "docker",
+        ["compose", "exec", "-T", "crm", "node", "-e", dockerProbe],
+        { cwd: directory },
+      )
+      : runCommand(
+        "docker",
+        ["compose", "run", "--rm", "--no-deps", "-T", "crm", "node", "-e", dockerProbe],
+        { cwd: directory },
+      );
+    const probe = readDockerProbe(output);
+    if (!probe) return incompleteVolume;
+    return { status: "ready", containerState, ...probe };
   } catch {
-    return {
-      status: "invalid",
-      message: "No pude revisar los archivos del volumen Docker",
-      action: "revisá: docker compose ps y docker compose logs crm",
-    };
+    return unreadableVolume;
   }
 };
 
@@ -157,6 +179,7 @@ export const inspectCrmWorkspace = ({
     return {
       mode: "docker",
       checkoutExists: true,
+      containerState: docker.containerState || "healthy",
       environment: {},
       environmentFile: true,
       configuredVariables: docker.configuredVariables,
@@ -178,6 +201,24 @@ export const inspectCrmWorkspace = ({
   };
 };
 
+const CONTAINER_STATE_DETAIL = Object.freeze({
+  healthy: "servicio crm saludable",
+  stopped: "volumen intacto, contenedor apagado",
+  unhealthy: "volumen intacto, servicio no saludable",
+});
+
+const CONTAINER_STATE_WARNING = Object.freeze({
+  healthy: null,
+  stopped: {
+    message: "El CRM está apagado",
+    action: "corré: npm run levantar -- --docker",
+  },
+  unhealthy: {
+    message: "El servicio Docker crm no está saludable",
+    action: "revisá: docker compose ps y docker compose logs crm",
+  },
+});
+
 export const reportCrmWorkspace = (workspace, {
   fail,
   mask,
@@ -186,8 +227,10 @@ export const reportCrmWorkspace = (workspace, {
 }) => {
   const configuredVariables = new Set(workspace.configuredVariables);
   if (workspace.mode === "docker") {
-    ok("Workspace del CRM disponible en el volumen Docker", "servicio crm saludable");
+    ok("Workspace del CRM disponible en el volumen Docker", CONTAINER_STATE_DETAIL[workspace.containerState]);
     ok(".env.local existe en el volumen Docker");
+    const containerWarning = CONTAINER_STATE_WARNING[workspace.containerState];
+    if (containerWarning) warn(containerWarning.message, containerWarning.action);
   } else {
     if (workspace.checkoutExists) ok("./crm clonado");
     else if (workspace.directoryExists) {
