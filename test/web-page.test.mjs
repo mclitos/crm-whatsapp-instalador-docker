@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 
-import { renderConnectionPage } from "../scripts/web/page.mjs";
+import {
+  determinateProgress,
+  INSTALLER_STAGES,
+  installerStageIndex,
+  renderConnectionPage,
+} from "../scripts/web/page.mjs";
 import { validateSetupInput } from "../scripts/web/setup-input.mjs";
 
 const createElement = ({ value = "" } = {}) => ({
@@ -15,9 +20,12 @@ const createElement = ({ value = "" } = {}) => ({
   hidden: false,
   listeners: {},
   querySelector() { return null; },
+  removeAttribute() {},
   replaceChildren() {},
   required: false,
   scrollIntoView() {},
+  setAttribute() {},
+  style: {},
   textContent: "",
   value,
 });
@@ -47,6 +55,11 @@ test("the generated page creates unique valid request IDs without crypto.randomU
     ["#setup-button", setupButton],
     ["#existing-project", existingSelect],
     ["#organization", createElement()],
+    [".progress-frame", createElement()],
+    ["#progress-detail", createElement()],
+    ["#progress-meter", createElement()],
+    ["#progress-meter-fill", createElement()],
+    ["#progress-count", createElement()],
     ["#public-url", createElement({ value: "http://192.168.9.45:3300" })],
   ]);
 
@@ -63,6 +76,7 @@ test("the generated page creates unique valid request IDs without crypto.randomU
     document: {
       createElement: () => createElement(),
       querySelector: (selector) => elements.get(selector),
+      querySelectorAll: () => [],
     },
     fetch: async (url, options) => {
       if (url === "/api/supabase/setup") {
@@ -102,6 +116,47 @@ test("the generated page creates unique valid request IDs without crypto.randomU
   assert.equal(setupResult.dataset.state, "error");
   assert.match(setupResult.textContent, /identificador seguro/u);
   assert.equal(setupButton.disabled, false);
+});
+
+test("the installer renders the five accessible macro stages and responsive motion hooks", () => {
+  const html = renderConnectionPage({ csrfToken: "csrf-test", nonce: "nonce-test" });
+
+  assert.deepEqual(INSTALLER_STAGES, ["Cuenta", "Supabase", "Base de datos", "CRM", "Verificación"]);
+  for (const stage of INSTALLER_STAGES) assert.match(html, new RegExp(`>${stage}<`, "u"));
+  assert.match(html, /<ol id="progress-path" class="progress-path">/u);
+  assert.match(html, /role="progressbar" aria-label="Avance de la tarea actual"/u);
+  assert.match(html, /@media \(max-width:520px\)/u);
+  assert.match(html, /@media \(prefers-reduced-motion:reduce\)/u);
+  assert.match(html, /aria-live="polite" aria-atomic="true"/u);
+});
+
+test("backend stages map to macro stages without inventing determinate progress", () => {
+  assert.equal(installerStageIndex("validating_account"), 0);
+  assert.equal(installerStageIndex("waiting_project"), 1);
+  assert.equal(installerStageIndex("applying_migrations"), 2);
+  assert.equal(installerStageIndex("writing_environment"), 3);
+  assert.equal(installerStageIndex("verifying_schema"), 3);
+  assert.equal(installerStageIndex("completed"), 4);
+
+  assert.deepEqual(determinateProgress({ current: 12, total: 39 }), {
+    current: 12,
+    total: 39,
+    percent: 31,
+  });
+  assert.equal(determinateProgress({ current: 0, total: 0 }), null);
+  assert.equal(determinateProgress({ current: 40, total: 39 }), null);
+  assert.equal(determinateProgress({ current: 1.5, total: 39 }), null);
+});
+
+test("the client marks completed, active, and error stages while preserving actionable errors", () => {
+  const html = renderConnectionPage({ csrfToken: "csrf-test", nonce: "nonce-test" });
+  const script = html.match(/<script[^>]*>([\s\S]*?)<\/script>/u)?.[1] || "";
+
+  assert.match(script, /succeeded \|\| index < activeStageIndex/u);
+  assert.match(script, /failed \? "error" : "active"/u);
+  assert.match(script, /job\.error\?\.message \|\| "La configuración no pudo terminar\."/u);
+  assert.match(script, /progressMeter\.hidden = !determinate/u);
+  assert.match(script, /progressMeter\.setAttribute\("aria-valuenow", String\(current\)\)/u);
 });
 
 test("Docker success retries the same origin until the installer yields to CRM", () => {

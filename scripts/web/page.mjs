@@ -4,6 +4,39 @@ const escapeHtml = (value) => String(value)
   .replaceAll("<", "&lt;")
   .replaceAll(">", "&gt;");
 
+export const INSTALLER_STAGES = Object.freeze([
+  "Cuenta",
+  "Supabase",
+  "Base de datos",
+  "CRM",
+  "Verificación",
+]);
+
+const STAGE_INDEX = Object.freeze({
+  queued: 0,
+  validating_account: 0,
+  storing_database_password: 0,
+  creating_project: 1,
+  storing_project_ref: 1,
+  waiting_project: 1,
+  fetching_keys: 1,
+  preparing_workspace: 2,
+  preparing_migrations: 2,
+  applying_migrations: 2,
+  verifying_schema: 3,
+  configuring_auth: 3,
+  writing_environment: 3,
+  completed: 4,
+});
+
+export const installerStageIndex = (stage) => STAGE_INDEX[stage] ?? 0;
+
+export const determinateProgress = ({ current, total } = {}) => (
+  Number.isInteger(current) && Number.isInteger(total) && total > 0 && current >= 0 && current <= total
+    ? { current, total, percent: Math.round((current / total) * 100) }
+    : null
+);
+
 export const renderConnectionPage = ({
   automaticCrmStart = false,
   csrfToken,
@@ -42,14 +75,42 @@ export const renderConnectionPage = ({
     button:hover { transform:translateY(-1px); background:var(--green-dark); }
     button:focus-visible { outline:3px solid var(--green); outline-offset:3px; }
     button:disabled { cursor:wait; opacity:.68; transform:none; }
-    .result { min-height:3rem; margin:1rem 0 0; padding:.8rem 0 0; border-top:1px solid var(--line); line-height:1.5; }
+    .progress-frame { margin:1.4rem 0 0; padding:1rem; border:1px solid var(--line); border-radius:.85rem; background:#faf7ee; }
+    .progress-title { margin:0 0 1rem; font-size:.8rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .progress-path { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); margin:0; padding:0; list-style:none; }
+    .progress-stage { position:relative; min-width:0; text-align:center; color:var(--muted); }
+    .progress-stage:not(:last-child)::after { content:""; position:absolute; z-index:0; top:.8rem; left:calc(50% + .8rem); width:calc(100% - 1.6rem); height:2px; background:var(--line); }
+    .progress-stage[data-state="complete"]:not(:last-child)::after { background:var(--green); }
+    .progress-stage[data-state="active"]:not(:last-child)::after { background:linear-gradient(90deg,#326fa8 0 45%,var(--line) 45%); background-size:200% 100%; animation:progress-segment 1.8s linear infinite; }
+    .progress-marker { position:relative; z-index:1; display:grid; place-items:center; width:1.6rem; height:1.6rem; margin:0 auto .55rem; border:2px solid var(--line); border-radius:50%; background:var(--card); color:transparent; font-size:.85rem; font-weight:900; }
+    .progress-label { display:block; font-size:.72rem; font-weight:800; line-height:1.25; }
+    .progress-stage[data-state="complete"] { color:var(--green-dark); }
+    .progress-stage[data-state="complete"] .progress-marker { border-color:var(--green); color:#fff; background:var(--green); }
+    .progress-stage[data-state="active"] { color:#205d91; }
+    .progress-stage[data-state="active"] .progress-marker { border-color:#326fa8; box-shadow:0 0 0 .3rem rgba(50,111,168,.12); animation:progress-pulse 1.8s ease-out infinite; }
+    .progress-stage[data-state="error"] { color:var(--error); }
+    .progress-stage[data-state="error"] .progress-marker { border-color:var(--error); color:#fff; background:var(--error); }
+    .progress-detail { margin:1rem 0 0; color:var(--ink); font-size:.9rem; line-height:1.5; }
+    .progress-meter { width:100%; height:.45rem; margin:.65rem 0 .35rem; border-radius:999px; overflow:hidden; background:#dfddd4; }
+    .progress-meter-fill { width:0; height:100%; border-radius:inherit; background:#326fa8; transition:width .25s ease-out; }
+    .progress-count { margin:0; color:var(--muted); font-size:.78rem; font-variant-numeric:tabular-nums; }
+    @keyframes progress-pulse { 50% { box-shadow:0 0 0 .5rem rgba(50,111,168,.05); } }
+    @keyframes progress-segment { to { background-position:-200% 0; } }
+    .result { min-height:1.5rem; margin:.8rem 0 0; line-height:1.5; }
     .result[data-state="success"] { color:var(--green-dark); font-weight:700; }
     .result[data-state="error"] { color:var(--error); font-weight:700; }
     .boundary { margin:1.25rem 0 0; padding-left:1rem; border-left:3px solid #d4a72c; color:var(--muted); font-size:.88rem; line-height:1.55; }
     .summary { padding:1rem; border-radius:.7rem; background:#f3efe2; color:var(--muted); line-height:1.55; }
     [hidden] { display:none !important; }
     @media (max-width:800px) { header,.steps { grid-template-columns:1fr; } h1 { max-width:14ch; } }
-    @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+    @media (max-width:520px) {
+      .progress-path { display:block; }
+      .progress-stage { min-height:3.15rem; padding-left:2.4rem; text-align:left; }
+      .progress-stage:not(:last-child)::after { top:1.6rem; bottom:0; left:.78rem; width:2px; height:auto; }
+      .progress-marker { position:absolute; top:0; left:0; margin:0; }
+      .progress-label { padding-top:.25rem; font-size:.78rem; }
+    }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
   </style>
 </head>
 <body>
@@ -122,7 +183,16 @@ export const renderConnectionPage = ({
           </div>
           <button id="setup-button" type="submit">Preparar Supabase y el CRM</button>
         </form>
-        <p id="setup-result" class="result" aria-live="polite"></p>
+        <section class="progress-frame" aria-labelledby="installation-progress-title" hidden>
+          <h3 id="installation-progress-title" class="progress-title">Progreso de la instalación</h3>
+          <ol id="progress-path" class="progress-path">
+            ${INSTALLER_STAGES.map((label, index) => `<li class="progress-stage" data-index="${index}" data-state="pending"><span class="progress-marker" aria-hidden="true"></span><span class="progress-label">${label}</span></li>`).join("")}
+          </ol>
+          <div id="progress-detail" class="progress-detail" role="status" aria-live="polite" aria-atomic="true"></div>
+          <div id="progress-meter" class="progress-meter" role="progressbar" aria-label="Avance de la tarea actual" hidden><div id="progress-meter-fill" class="progress-meter-fill"></div></div>
+          <p id="progress-count" class="progress-count" hidden></p>
+        </section>
+        <p id="setup-result" class="result" role="status" aria-live="polite"></p>
       </section>
     </div>
   </main>
@@ -135,9 +205,57 @@ export const renderConnectionPage = ({
     const setupForm = document.querySelector("#setup-form");
     const setupResult = document.querySelector("#setup-result");
     const setupButton = document.querySelector("#setup-button");
+    const progressFrame = document.querySelector(".progress-frame");
+    const progressStages = [...document.querySelectorAll(".progress-stage")];
+    const progressDetail = document.querySelector("#progress-detail");
+    const progressMeter = document.querySelector("#progress-meter");
+    const progressMeterFill = document.querySelector("#progress-meter-fill");
+    const progressCount = document.querySelector("#progress-count");
     const existingSelect = document.querySelector("#existing-project");
     const organizationSelect = document.querySelector("#organization");
     const automaticCrmStart = ${JSON.stringify(automaticCrmStart)};
+    const stageIndex = ${JSON.stringify(STAGE_INDEX)};
+    let activeStageIndex = 0;
+
+    const renderProgress = (job) => {
+      if (typeof stageIndex[job.stage] === "number") activeStageIndex = stageIndex[job.stage];
+      const failed = ["failed", "interrupted", "needs_attention"].includes(job.status);
+      const succeeded = job.status === "succeeded";
+      progressFrame.hidden = false;
+      progressStages.forEach((stage, index) => {
+        const state = succeeded || index < activeStageIndex
+          ? "complete"
+          : index === activeStageIndex
+            ? failed ? "error" : "active"
+            : "pending";
+        stage.dataset.state = state;
+        stage.querySelector(".progress-marker").textContent = state === "complete" ? "✓" : state === "error" ? "!" : "";
+        if (state === "active" || state === "error") stage.setAttribute("aria-current", "step");
+        else stage.removeAttribute("aria-current");
+      });
+      progressDetail.textContent = failed
+        ? job.error?.message || "La configuración no pudo terminar."
+        : job.progress?.message || "Preparando la instalación.";
+      const current = job.progress?.current;
+      const total = job.progress?.total;
+      const determinate = Number.isInteger(current) && Number.isInteger(total) && total > 0 && current >= 0 && current <= total;
+      progressMeter.hidden = !determinate;
+      progressCount.hidden = !determinate;
+      if (determinate) {
+        const percent = Math.round((current / total) * 100);
+        progressMeter.setAttribute("aria-valuemin", "0");
+        progressMeter.setAttribute("aria-valuemax", String(total));
+        progressMeter.setAttribute("aria-valuenow", String(current));
+        progressMeterFill.style.width = percent + "%";
+        progressCount.textContent = current + " de " + total;
+      } else {
+        progressMeter.removeAttribute("aria-valuemin");
+        progressMeter.removeAttribute("aria-valuemax");
+        progressMeter.removeAttribute("aria-valuenow");
+        progressMeterFill.style.width = "0";
+        progressCount.textContent = "";
+      }
+    };
 
     const request = async (url, options = {}) => {
       const response = await fetch(url, options);
@@ -239,7 +357,8 @@ export const renderConnectionPage = ({
       for (;;) {
         const data = await request(statusUrl);
         const job = data.job;
-        setupResult.textContent = job.progress.message;
+        renderProgress(job);
+        setupResult.textContent = "";
         if (job.status === "succeeded") {
           setupResult.dataset.state = "success";
           setupResult.textContent = ${JSON.stringify(automaticCrmStart
@@ -250,7 +369,6 @@ export const renderConnectionPage = ({
         }
         if (["failed", "interrupted", "needs_attention"].includes(job.status)) {
           setupResult.dataset.state = "error";
-          setupResult.textContent = job.error?.message || "La configuración no pudo terminar.";
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -260,8 +378,9 @@ export const renderConnectionPage = ({
     setupForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       setupButton.disabled = true;
+      renderProgress({ status: "queued", stage: "queued", progress: { message: "Creando el trabajo de configuración…" } });
       setupResult.dataset.state = "";
-      setupResult.textContent = "Creando el trabajo de configuración…";
+      setupResult.textContent = "";
       try {
         const mode = setupForm.elements.mode.value;
         const body = {
