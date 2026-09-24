@@ -65,11 +65,28 @@ Visible progress reduces uncertainty and prevents users from restarting a health
     - Commit: `ec7ed1d` (`feat(installer): add staged setup progress`).
     - Native assessment: medium risk, `review_due: false`, reason `under_budget` for the range from `c4c7f58`.
 
+- [x] **T2 — Refresh the README for the current installer experience**
+  - Route: delegated direct.
+  - Trigger evidence: understanding and rewriting the primary onboarding document requires preparation against the current scripts, Docker flow, progress experience, and repository identity.
+  - Acceptance: README leads with the no-terminal Docker path, accurately reflects the current Supabase-backed architecture and automated flow, explains the new visual progress experience, preserves security and recovery warnings, remains easy to scan, and does not claim unimplemented behavior.
+  - Checks: repository link and command verification, `npm test`, `git diff --check`.
+  - Evidence:
+    - Route: delegated direct documentation work on `docs/readme-current-installer`.
+    - Files: `README.md`, `odd/tasks/installer-progress-line.md`.
+    - Rationale: lead with the no-terminal Docker outcome, reveal architecture and advanced commands progressively, and keep operational claims tied to the current Compose and npm scripts.
+    - Content: documents the temporary installer-to-CRM handoff on port 3300, named-volume persistence, external Supabase backend, five-stage progress path, automated and owner-only actions, repository identities, recovery commands, and safety boundaries.
+    - Focused check: README local-link and npm-script verifier — 5 local paths and 10 npm scripts verified.
+    - Full check: `npm test` — 131 passed, 0 failed.
+    - Formatting check: `git diff --check` — passed with no output.
+    - Runtime harness: N/A; this work unit changes documentation only, while the full test suite validates README-coupled runtime metadata.
+    - Rollback boundary: revert `README.md` and the T2 evidence in this task document without affecting the installer implementation.
+
 ## Progress
 
 - Feature branch created: `feat/installer-progress-line`.
 - T1 completed and verified in `ec7ed1d`; focused parent spot check also passed 5/5.
+- T2 completed and verified on `docs/readme-current-installer`; GitHub publication remains outside this task.
 
 ## Next step
 
-Review the T1 work-unit commit against the branch point and decide the next delivery step.
+Review the T2 work-unit commit and choose the later publication step separately.
