@@ -62,12 +62,13 @@ Visible progress reduces uncertainty and prevents users from restarting a health
     - Checks: `node --test test/web-page.test.mjs` — 5 passed; `npm test` — 131 passed; `git diff --check` — passed with no output.
     - Runtime harness: N/A; the focused rendered-page test executes the embedded client script without starting Docker, Supabase, remote services, or the live CRM.
     - Rollback boundary: remove the progress markup/styles/client renderer and its focused assertions from the three files above.
-    - Commit: recorded by the parent from the returned commit identity (avoids a metadata-only follow-up commit).
+    - Commit: `ec7ed1d` (`feat(installer): add staged setup progress`).
+    - Native assessment: medium risk, `review_due: false`, reason `under_budget` for the range from `c4c7f58`.
 
 ## Progress
 
 - Feature branch created: `feat/installer-progress-line`.
-- T1 completed and verified; commit identity is returned to the parent for evidence recording.
+- T1 completed and verified in `ec7ed1d`; focused parent spot check also passed 5/5.
 
 ## Next step
 
