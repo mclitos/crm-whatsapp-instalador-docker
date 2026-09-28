@@ -82,6 +82,8 @@ Installs age while wacrm keeps shipping fixes. People who do not program need a 
 - Live rollback (parent, 2026-09-28): first attempt with `--commit` failed safely (`node: bad option: --commit`, CRM untouched) because `docker compose run updater <args>` replaces the service command; the unit test had asserted that shape. Fixed in `677f050` (`fix(actualizar): pass updater entrypoint when forwarding flags`), `npm test` 166 pass. Retry: `45e80ad` -> `80c3f9a` in ~2.5 min with the rollback warning, 0 migrations, `healthy`; forward again `80c3f9a` -> `45e80ad` with no flags, `healthy`; `npm run check`: version is the reviewed one, 37 tables, 42 migrations, ENCRYPTION_KEY present.
 - Known follow-ups: the success line hardcodes `http://127.0.0.1:3300` and ignores `HOST_BIND_ADDRESS` (same pre-existing issue as `levantar.mjs`); the downtime notice prints even when nothing changes.
 
+- Delivered (2026-09-28): README gained an "Actualizar el CRM" section (`77cc260`); `feat/crm-updates` fast-forwarded into `main` and pushed to `origin/main` (`b5e3277..77cc260`). Live install stays at the reviewed `45e80ad`, equal to upstream HEAD. RDD off: delivery `disabled/unmanaged`.
+
 ## Next step
 
-Merge `feat/crm-updates` into `main` when the user decides.
+Optional follow-ups: respect `HOST_BIND_ADDRESS` in the printed URL; skip the downtime notice when nothing changes.
