@@ -77,6 +77,8 @@ Installs age while wacrm keeps shipping fixes. People who do not program need a 
 
 - Pre-implementation: dry run and real manual update of the live install from `80c3f9a` to `45e80ad` succeeded (≈3 min downtime, 0 migrations, data intact).
 
+- Live run (parent, 2026-09-28): `npm run actualizar -- --docker --sin-pull` rebuilt images, the updater read Supabase applied migrations through the encrypted `/data` credentials, and reported `unchanged` at `45e80ad`; no restart, CRM stayed `healthy`. `npm run check` prints "CRM en la versión 45e80ad9e23b es la versión revisada de este instalador". Known minor UX: the "apagado unos 3 minutos" notice prints before knowing whether an update is needed. Rollback path (`--commit <older>`) covered by tests but not yet exercised live.
+
 ## Next step
 
-The parent runs the real `npm run actualizar -- --docker` against the live install.
+Optional live rollback test; then merge `feat/crm-updates` into `main` when the user decides.
