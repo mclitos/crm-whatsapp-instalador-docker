@@ -24,6 +24,7 @@
     "paso1": "node scripts/paso1-supabase.mjs",
     "paso2": "node scripts/paso2-meta.mjs",
     "check": "node scripts/check.mjs",
+    "actualizar": "node scripts/actualizar.mjs",
     "levantar": "node scripts/levantar.mjs",
     "tunel": "node scripts/tunel.mjs",
     "vincular": "node scripts/vincular.mjs",

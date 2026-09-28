@@ -14,8 +14,9 @@ import {
   ROOT, CRM_DIR, C, ok, fail, warn, info, encabezado, titulo,
   leerEnv, leerEstado, enmascarar, problemas, pedir, rutaCredenciales,
 } from "./lib/ui.mjs";
+import { resolveCrmSource } from "./lib/crm-source.mjs";
 import { reportWebhookChallenge } from "./lib/check-webhook.mjs";
-import { inspectCrmWorkspace, reportCrmWorkspace } from "./lib/check-workspace.mjs";
+import { inspectCrmWorkspace, reportCrmVersion, reportCrmWorkspace } from "./lib/check-workspace.mjs";
 import { inspectDockerSupabase, reportDockerSupabase } from "./lib/supabase-diagnostic.mjs";
 import { SupabaseAdmin } from "./lib/supabase.mjs";
 import { Meta, PERMISOS_NECESARIOS, errorDe } from "./lib/meta.mjs";
@@ -36,6 +37,14 @@ encabezado("Diagnóstico del CRM de WhatsApp");
 titulo("1. Archivos");
 
 reportCrmWorkspace(crmWorkspace, { fail, mask: enmascarar, ok, warn });
+
+let pinnedCommit = null;
+try {
+  pinnedCommit = resolveCrmSource({ credentials: creds }).commit;
+} catch {
+  warn("No pude leer crm-version.json", "restauralo con: git checkout crm-version.json");
+}
+reportCrmVersion(crmWorkspace, pinnedCommit, { info, ok, warn });
 
 // ── 2. Supabase ─────────────────────────────────────────────────────────────
 titulo("2. Supabase");

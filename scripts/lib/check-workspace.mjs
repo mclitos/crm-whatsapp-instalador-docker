@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 export const REQUIRED_CRM_ENV_KEYS = Object.freeze([
@@ -30,7 +30,26 @@ if (fs.existsSync(environmentPath)) {
     environment[key] = value;
   }
 }
+const readRevision = () => {
+  try {
+    const gitDirectory = directory + "/.git";
+    const head = fs.readFileSync(gitDirectory + "/HEAD", "utf8").trim();
+    const reference = head.match(/^ref:\\s*(.+)$/);
+    if (!reference) return head;
+    try {
+      return fs.readFileSync(gitDirectory + "/" + reference[1], "utf8").trim();
+    } catch {
+      const line = fs.readFileSync(gitDirectory + "/packed-refs", "utf8")
+        .split("\\n")
+        .find((candidate) => candidate.endsWith(" " + reference[1]));
+      return line ? line.split(" ")[0] : null;
+    }
+  } catch {
+    return null;
+  }
+};
 console.log(JSON.stringify({
+  sourceRevision: readRevision(),
   checkout: fs.existsSync(directory + "/.git") && fs.existsSync(directory + "/supabase/migrations"),
   environmentFile: fs.existsSync(environmentPath),
   configuredVariables: requiredKeys.filter((key) => Boolean(environment[key])),
@@ -49,7 +68,7 @@ const defaultRunCommand = (command, args, options) => execFileSync(command, args
   timeout: 240000,
 });
 
-const parseComposeServices = (output) => {
+export const parseComposeServices = (output) => {
   const trimmed = output.trim();
   if (!trimmed) return [];
   try {
@@ -60,6 +79,28 @@ const parseComposeServices = (output) => {
   }
 };
 
+const FULL_REVISION = /^[a-f0-9]{40}$/u;
+const validRevision = (value) => (typeof value === "string" && FULL_REVISION.test(value) ? value : null);
+
+const readLocalRevision = (crmDirectory) => {
+  try {
+    const gitDirectory = resolve(crmDirectory, ".git");
+    const head = readFileSync(resolve(gitDirectory, "HEAD"), "utf8").trim();
+    const reference = head.match(/^ref:\s*(.+)$/u)?.[1];
+    if (!reference) return validRevision(head);
+    try {
+      return validRevision(readFileSync(resolve(gitDirectory, reference), "utf8").trim());
+    } catch {
+      const line = readFileSync(resolve(gitDirectory, "packed-refs"), "utf8")
+        .split("\n")
+        .find((candidate) => candidate.endsWith(` ${reference}`));
+      return validRevision(line?.split(" ")[0]);
+    }
+  } catch {
+    return null;
+  }
+};
+
 const readDockerProbe = (output) => {
   // `compose run` arranca el entrypoint de la imagen: cualquier línea suya
   // precede al JSON de la sonda, así que nos quedamos con la última.
@@ -67,6 +108,7 @@ const readDockerProbe = (output) => {
   const probe = JSON.parse(lines[lines.length - 1]);
   if (!probe?.checkout || !probe?.environmentFile) return null;
   return {
+    sourceRevision: validRevision(probe.sourceRevision),
     configuredVariables: Array.isArray(probe.configuredVariables)
       ? probe.configuredVariables.filter((key) => REQUIRED_CRM_ENV_KEYS.includes(key))
       : [],
@@ -167,6 +209,7 @@ export const inspectCrmWorkspace = ({
       directoryExists,
       environment,
       environmentFile,
+      sourceRevision: readLocalRevision(crmDirectory),
       configuredVariables: REQUIRED_CRM_ENV_KEYS.filter((key) => Boolean(environment[key])),
       encryptionKeyValid: environment.ENCRYPTION_KEY
         ? /^[a-f0-9]{64}$/iu.test(environment.ENCRYPTION_KEY)
@@ -182,6 +225,7 @@ export const inspectCrmWorkspace = ({
       containerState: docker.containerState || "healthy",
       environment: {},
       environmentFile: true,
+      sourceRevision: docker.sourceRevision,
       configuredVariables: docker.configuredVariables,
       encryptionKeyValid: docker.encryptionKeyValid,
     };
@@ -270,4 +314,32 @@ export const reportCrmWorkspace = (workspace, {
       "tiene que ser exactamente 32 bytes en hex",
     );
   }
+};
+
+const shortRevision = (revision) => revision.slice(0, 12);
+
+/**
+ * Informativo: una versión nueva no es una falla, solo un aviso.
+ * `pinnedCommit` es null cuando CRM_REPO_URL apunta a otro origen.
+ */
+export const reportCrmVersion = (workspace, pinnedCommit, { info, ok, warn }) => {
+  if (workspace.mode !== "docker" && !workspace.checkoutExists) return;
+  const installed = workspace.sourceRevision;
+  if (!installed) {
+    warn("No pude leer la versión instalada del CRM");
+    return;
+  }
+  if (!pinnedCommit) {
+    ok(`CRM en la versión ${shortRevision(installed)}`, "origen personalizado (CRM_REPO_URL): no se compara");
+    return;
+  }
+  if (installed === pinnedCommit) {
+    ok(`CRM en la versión ${shortRevision(installed)}`, "es la versión revisada de este instalador");
+    return;
+  }
+  warn(
+    `Hay una versión nueva del CRM: instalada ${shortRevision(installed)}, revisada ${shortRevision(pinnedCommit)}`,
+    "corré: npm run actualizar -- --docker",
+  );
+  info("Detalles y cómo volver atrás: docs/06-actualizaciones.md");
 };

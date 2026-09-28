@@ -60,10 +60,11 @@ Installs age while wacrm keeps shipping fixes. People who do not program need a 
   - Acceptance: same version → no-op; local tracked changes → stop; markers ignored; pending migrations without `--aplicar-migraciones` → stop with explanation and no checkout; with it → checkout, apply pending only, mark ready; `--commit` allows any commit and warns that migrations are not reverted on rollback; previous commit printed.
   - Checks: focused tests with fake git runner and Supabase admin, `npm test`.
   - Evidence: commit recorded in the following commit log entry (see `git log -- scripts/lib/crm-update.mjs`); files `scripts/lib/crm-update.mjs`, `scripts/container/update-crm.mjs`, `scripts/lib/supabase-setup.mjs` (export `applyMigrations`), `compose.yaml` (`updater`, profile `update`), `Dockerfile` (copies `crm-version.json`), `test/crm-update.test.mjs`. `npm test`: 151 pass, 0 fail; `docker compose config -q`: ok.
-- [ ] **T3 — Host command and version in `npm run check`**
+- [x] **T3 — Host command and version in `npm run check`**
   - Route: delegated direct.
   - Acceptance: `npm run actualizar -- --docker` pulls installer (`--ff-only`, refuses dirty tree), rebuilds image, runs updater, restarts `crm`, waits for health, reports downtime expectation; `npm run check` shows installed vs pinned version.
   - Checks: `npm test`, `git diff --check`, real run against the live install.
+  - Evidence: commit recorded in `git log -- scripts/actualizar.mjs`; files `scripts/actualizar.mjs`, `scripts/lib/actualizar-docker.mjs`, `scripts/lib/check-workspace.mjs` (probe reads HEAD; `reportCrmVersion`), `scripts/check.mjs`, `package.json`, `test/actualizar-docker.test.mjs`, `test/check-workspace.test.mjs`. `npm test`: 160 pass, 0 fail; `git diff --check`: clean; `npm run check` (read-only, live install) prints "CRM en la versión 45e80ad9e23b ... es la versión revisada"; `node scripts/actualizar.mjs` without `--docker` gives the actionable message. Real update run: pending, done by the parent.
 - [ ] **T4 — Documentation including rollback**
   - Route: delegated direct.
   - Acceptance: `docs/06-actualizaciones.md` describes the implemented behavior (status note removed) with a "Volver a una versión anterior" section; README points to it.
@@ -75,4 +76,4 @@ Installs age while wacrm keeps shipping fixes. People who do not program need a 
 
 ## Next step
 
-T3.
+T4, then the parent runs the real `npm run actualizar -- --docker`.

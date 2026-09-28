@@ -348,3 +348,45 @@ test("the offline probe survives entrypoint output preceding its JSON", () => {
   assert.equal(workspace.containerState, "stopped");
   assert.deepEqual(report.failures, []);
 });
+
+test("the Docker probe reports the installed revision and the version is compared with the pinned one", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { reportCrmVersion } = await import("../scripts/lib/check-workspace.mjs");
+  const revision = "c".repeat(40);
+  const directory = mkdtempSync(join(tmpdir(), "check-probe-"));
+  try {
+    mkdirSync(join(directory, ".git"));
+    mkdirSync(join(directory, "supabase", "migrations"), { recursive: true });
+    writeFileSync(join(directory, ".env.local"), "ENCRYPTION_KEY=x\n");
+    writeFileSync(join(directory, ".git", "HEAD"), `${revision}\n`);
+    const workspace = inspectCrmWorkspace({
+      crmDirectory: "/installer/crm",
+      directory: "/installer",
+      exists: () => false,
+      readEnvironment: () => ({}),
+      runCommand(_command, args) {
+        if (args[1] === "ps") return `${JSON.stringify({ Service: "crm", State: "running", Health: "healthy" })}\n`;
+        // Ejecuta la sonda real contra un checkout de prueba en vez del contenedor.
+        return execFileSync(process.execPath, ["-e", args.at(-1)], {
+          encoding: "utf8",
+          env: { ...process.env, CRM_WORKSPACE_DIR: directory },
+        });
+      },
+    });
+    assert.equal(workspace.sourceRevision, revision);
+
+    const messages = { ok: [], warn: [] };
+    const sinks = { info() {}, ok: (m) => messages.ok.push(m), warn: (m) => messages.warn.push(m) };
+    reportCrmVersion(workspace, revision, sinks);
+    assert.match(messages.ok[0], /es la versión revisada|CRM en la versión/u);
+    reportCrmVersion(workspace, "d".repeat(40), sinks);
+    assert.match(messages.warn[0], /Hay una versión nueva del CRM/u);
+    reportCrmVersion(workspace, null, sinks);
+    assert.equal(messages.ok.length, 2);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
