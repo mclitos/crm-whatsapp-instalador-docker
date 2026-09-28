@@ -217,7 +217,7 @@ export const provisionSupabase = async (
   );
 
   await report("preparing_workspace");
-  await workspace.ensure(input.repoUrl);
+  await workspace.ensure(input.repoUrl, input.commit || null);
   const migrationSummary = await applyMigrations({ admin, ref: selection.ref, workspace, report });
 
   await report("verifying_schema");

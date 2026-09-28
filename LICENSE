@@ -25,6 +25,6 @@ SOFTWARE.
 Este instalador es obra independiente de IABYIA y NO incluye el código del CRM.
 ArnasDon/wacrm (https://github.com/ArnasDon/wacrm) es el CRM original, también
 publicado bajo licencia MIT y con copyright de sus respectivos autores.
-mclitos/wacrm (https://github.com/mclitos/wacrm) es la fuente mantenida que este
-instalador clona de forma predeterminada, y puede reemplazarse mediante
-CRM_REPO_URL.
+mclitos/wacrm (https://github.com/mclitos/wacrm) es un fork mantenido; el
+instalador clona ArnasDon/wacrm de forma predeterminada y el origen puede
+reemplazarse mediante CRM_REPO_URL.

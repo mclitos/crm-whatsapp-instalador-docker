@@ -49,12 +49,12 @@ Hay tres repositorios distintos:
 
 | Repositorio | Responsabilidad |
 |---|---|
-| [`ArnasDon/wacrm`](https://github.com/ArnasDon/wacrm) | CRM original, publicado con licencia MIT. |
-| [`mclitos/wacrm`](https://github.com/mclitos/wacrm) | Fork mantenido que se clona de forma predeterminada para disponer de una base de instalación controlada. |
+| [`ArnasDon/wacrm`](https://github.com/ArnasDon/wacrm) | CRM original, publicado con licencia MIT. Se instala el commit exacto revisado que fija `crm-version.json`. |
+| [`mclitos/wacrm`](https://github.com/mclitos/wacrm) | Fork mantenido; ya no es el origen predeterminado, pero puede usarse mediante `CRM_REPO_URL`. |
 | [`mclitos/crm-whatsapp-instalador-docker`](https://github.com/mclitos/crm-whatsapp-instalador-docker) | Este instalador independiente; coordina Docker y Supabase, pero no contiene una copia del CRM. |
 
 Para instalar desde otro origen, defina `CRM_REPO_URL` en un archivo `.env`
-local ignorado por Git. **No incluya ni edite `crm/` dentro de este
+local ignorado por Git (se sigue la rama por defecto de ese repositorio). **No incluya ni edite `crm/` dentro de este
 repositorio:** es un workspace clonado y reemplazable, no parte del instalador.
 
 ## Cómo funciona la instalación Docker

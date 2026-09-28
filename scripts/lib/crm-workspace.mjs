@@ -101,7 +101,18 @@ export class CrmWorkspace {
       && (await exists(resolve(directory, "supabase", "migrations")));
   }
 
-  async ensure(repoUrl) {
+  async #cloneRepository(repoUrl, commit, target) {
+    if (!commit) {
+      await this.gitRunner(["clone", "--depth", "1", repoUrl, target]);
+      return;
+    }
+    // Se clona sin checkout y se trae solo el commit fijado, sin historial.
+    await this.gitRunner(["clone", "--depth", "1", "--no-checkout", repoUrl, target]);
+    await this.gitRunner(["-C", target, "fetch", "--depth", "1", "origin", commit]);
+    await this.gitRunner(["-C", target, "checkout", "-q", "--detach", commit]);
+  }
+
+  async ensure(repoUrl, commit = null) {
     if (await this.isValidCheckout()) return { directory: this.directory, cloned: false };
 
     const targetExists = await exists(this.directory);
@@ -123,13 +134,13 @@ export class CrmWorkspace {
           "El directorio del CRM existe pero está incompleto. No lo borré: revisalo antes de reintentar.",
         );
       }
-      return this.#cloneIntoMountedDirectory(repoUrl);
+      return this.#cloneIntoMountedDirectory(repoUrl, commit);
     }
 
     await mkdir(dirname(this.directory), { recursive: true });
     const temporaryDirectory = `${this.directory}.tmp-${randomBytes(8).toString("hex")}`;
     try {
-      await this.gitRunner(["clone", "--depth", "1", repoUrl, temporaryDirectory]);
+      await this.#cloneRepository(repoUrl, commit, temporaryDirectory);
       if (!(await this.isValidCheckout(temporaryDirectory))) {
         throw new CrmWorkspaceError("El repositorio clonado no contiene supabase/migrations.");
       }
@@ -144,12 +155,12 @@ export class CrmWorkspace {
     }
   }
 
-  async #cloneIntoMountedDirectory(repoUrl) {
+  async #cloneIntoMountedDirectory(repoUrl, commit) {
     const temporaryDirectory = resolve(this.directory, `.clone-tmp-${randomBytes(8).toString("hex")}`);
     const markerPath = resolve(this.directory, CLONE_TRANSFER_MARKER);
     let transferRecorded = false;
     try {
-      await this.gitRunner(["clone", "--depth", "1", repoUrl, temporaryDirectory]);
+      await this.#cloneRepository(repoUrl, commit, temporaryDirectory);
       if (!(await this.isValidCheckout(temporaryDirectory))) {
         throw new CrmWorkspaceError("El repositorio clonado no contiene supabase/migrations.");
       }

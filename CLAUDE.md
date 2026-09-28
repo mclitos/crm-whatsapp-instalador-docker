@@ -8,9 +8,10 @@ licencia MIT.
 Hay tres identidades que no deben confundirse:
 
 1. `ArnasDon/wacrm` es el CRM original.
-2. `mclitos/wacrm` es el fork mantenido que se clona de forma predeterminada
-   para dar una base de instalación controlada. Puede reemplazarse mediante
-   `CRM_REPO_URL`.
+2. `mclitos/wacrm` es un fork mantenido. Ya no es el origen predeterminado:
+   por defecto se clona `ArnasDon/wacrm` en el commit exacto de
+   `crm-version.json`. `CRM_REPO_URL` reemplaza el origen y entonces se sigue
+   la rama por defecto de ese repositorio.
 3. `mclitos/crm-whatsapp-instalador-docker` es este instalador independiente.
 
 Supabase sigue siendo el backend de base de datos y autenticación. Docker
@@ -96,8 +97,7 @@ que no programa es una instalación perdida.
 ## Reglas
 
 1. **No incluyas ni versiones `crm/`.** El origen predeterminado es
-   `https://github.com/mclitos/wacrm.git`, fork mantenido de
-   `ArnasDon/wacrm`. El código se clona durante la instalación y puede usarse
+   `ArnasDon/wacrm` en el commit fijado por `crm-version.json`. El código se clona durante la instalación y puede usarse
    otro origen mediante `CRM_REPO_URL`. Incluir una copia congelada haría que el
    instalador envejeciera con el CRM.
 

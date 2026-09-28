@@ -106,6 +106,55 @@ test("a clone is prepared in a sibling directory and atomically renamed", async 
   assert.equal((await stat(join(directory, "supabase", "migrations"))).isDirectory(), true);
 });
 
+test("a pinned commit is fetched and checked out detached in both clone paths", async (context) => {
+  const { CrmWorkspace } = await loadWorkspaceModule();
+  const commit = "45e80ad9e23b91f5c02ab9f935edbae67810e59d";
+  const recorder = (calls) => async (args) => {
+    calls.push(args);
+    if (args[0] === "clone") await createValidCheckout(args.at(-1));
+  };
+  const assertPinned = (calls) => {
+    assert.deepEqual(calls[0].slice(0, 4), ["clone", "--depth", "1", "--no-checkout"]);
+    const target = calls[0].at(-1);
+    assert.deepEqual(calls[1], ["-C", target, "fetch", "--depth", "1", "origin", commit]);
+    assert.deepEqual(calls[2], ["-C", target, "checkout", "-q", "--detach", commit]);
+    assert.equal(calls.length, 3);
+  };
+
+  await context.test("fresh directory", async () => {
+    const root = await createRoot();
+    const calls = [];
+    const workspace = new CrmWorkspace({ directory: join(root, "crm"), gitRunner: recorder(calls) });
+    assert.equal((await workspace.ensure("https://example.test/wacrm.git", commit)).cloned, true);
+    assertPinned(calls);
+  });
+
+  await context.test("mounted empty directory", async () => {
+    const root = await createRoot();
+    const directory = join(root, "crm");
+    await mkdir(directory);
+    const calls = [];
+    const workspace = new CrmWorkspace({ directory, gitRunner: recorder(calls) });
+    assert.equal((await workspace.ensure("https://example.test/wacrm.git", commit)).cloned, true);
+    assertPinned(calls);
+    assert.equal((await stat(join(directory, "supabase", "migrations"))).isDirectory(), true);
+  });
+
+  await context.test("a failed checkout of the pinned commit leaves no partial directory", async () => {
+    const root = await createRoot();
+    const directory = join(root, "crm");
+    const workspace = new CrmWorkspace({
+      directory,
+      async gitRunner(args) {
+        if (args[0] === "clone") await createValidCheckout(args.at(-1));
+        else throw new Error("fetch failed");
+      },
+    });
+    await assert.rejects(workspace.ensure("https://example.test/wacrm.git", commit), /clonar/u);
+    assert.deepEqual((await readdir(root)), []);
+  });
+});
+
 test("a valid checkout is untouched and an incomplete checkout is rejected without deletion", async () => {
   const { CrmWorkspace } = await loadWorkspaceModule();
   assert.equal(typeof CrmWorkspace, "function");

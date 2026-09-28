@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 
 import { CrmWorkspace, resolveCrmWorkspaceDir } from "../lib/crm-workspace.mjs";
-import { resolveCrmRepoUrl } from "../lib/crm-source.mjs";
+import { resolveCrmSource } from "../lib/crm-source.mjs";
 import { provisionSupabase, PROGRESS_STAGES } from "../lib/supabase-setup.mjs";
 import { SupabaseAdmin } from "../lib/supabase.mjs";
 import { EncryptedCredentialStore } from "./encrypted-store.mjs";
@@ -159,9 +159,9 @@ export const createDefaultSetupJobService = async ({
   onSetupSucceeded,
   async runSetup(input, { onProgress }) {
     const credentials = await credentialStore.load();
-    const repoUrl = resolveCrmRepoUrl({ environment, credentials });
+    const { repoUrl, commit } = resolveCrmSource({ environment, credentials });
     return provisionSupabase(
-      { ...input, repoUrl },
+      { ...input, repoUrl, commit },
       {
         admin: createAdmin(credentials.supabaseAccessToken),
         credentialStore,

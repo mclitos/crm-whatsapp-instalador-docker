@@ -33,7 +33,7 @@ services:
       WEB_INSTALLER_DATA_DIR: "/data/installer"
       WEB_INSTALLER_SETUP_TOKEN: "${WEB_INSTALLER_SETUP_TOKEN:-}"
       WEB_INSTALLER_ALLOWED_ORIGINS: "http://${PUBLIC_HOST:-localhost}:3300"
-      CRM_REPO_URL: "${CRM_REPO_URL:-https://github.com/mclitos/wacrm.git}"
+      CRM_REPO_URL: "${CRM_REPO_URL:-}"
       CRM_WORKSPACE_DIR: "/workspace/crm"
       CRM_AUTO_START: "1"
       CRM_PUBLIC_URL_DEFAULT: "http://${PUBLIC_HOST:-localhost}:3300"

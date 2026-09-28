@@ -21,7 +21,7 @@ import {
   rutaCredenciales,
 } from "./lib/ui.mjs";
 import { SupabaseAdmin, generarDbPass } from "./lib/supabase.mjs";
-import { resolveCrmRepoUrl } from "./lib/crm-source.mjs";
+import { resolveCrmSource } from "./lib/crm-source.mjs";
 import { CrmWorkspace } from "./lib/crm-workspace.mjs";
 
 const CREDS = rutaCredenciales();
@@ -54,7 +54,8 @@ ok(`Token válido`, `${listaOrgs.length} organización(es)`);
 titulo("2. Código del CRM");
 const workspace = new CrmWorkspace({ directory: CRM_DIR });
 try {
-  const prepared = await workspace.ensure(resolveCrmRepoUrl({ credentials: creds }));
+  const source = resolveCrmSource({ credentials: creds });
+  const prepared = await workspace.ensure(source.repoUrl, source.commit);
   if (prepared.cloned) ok("Clonado en ./crm");
   else ok("./crm ya existe", "no lo toco (si querés actualizarlo: cd crm && git pull)");
 } catch (error) {

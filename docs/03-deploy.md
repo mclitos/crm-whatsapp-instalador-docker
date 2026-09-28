@@ -180,10 +180,10 @@ Todas sirven. Es una app Next.js estándar.
 
 ## Sobre el fork
 
-El instalador clona el CRM desde `mclitos/wacrm`, un fork mantenido de
-`ArnasDon/wacrm`, y no incluye una copia dentro de este repositorio. Este origen
-predeterminado ofrece una base de instalación controlada y puede sustituirse
-mediante `CRM_REPO_URL`.
+El instalador clona el CRM desde `ArnasDon/wacrm` en el commit revisado que fija
+`crm-version.json`, y no incluye una copia dentro de este repositorio. Ese origen
+predeterminado puede sustituirse mediante `CRM_REPO_URL` (entonces se sigue la
+rama por defecto de ese repositorio).
 
 Si querés tu propia copia —para deployar desde tu GitHub, cambiarle el logo,
 ponerle tu marca— la licencia MIT te deja:
