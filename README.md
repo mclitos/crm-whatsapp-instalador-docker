@@ -240,4 +240,3 @@ Este instalador se publica con licencia MIT. El CRM original
 MIT; al redistribuirlo deben conservarse su aviso de copyright y su archivo
 `LICENSE`.
 
-Hecho por [IABYIA](https://iabyia.com.ar).
