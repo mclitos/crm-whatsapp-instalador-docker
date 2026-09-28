@@ -150,6 +150,38 @@ Para ejecutar el diagnóstico de punta a punta sin imprimir credenciales:
 npm run check
 ```
 
+## Actualizar el CRM
+
+El instalador fija en `crm-version.json` la versión de wacrm que fue revisada.
+Para llevar una instalación Docker a esa versión:
+
+```bash
+npm run actualizar -- --docker
+```
+
+El comando actualiza el instalador, descarga la versión revisada, aplica solo
+las migraciones pendientes y reinicia el CRM. Los contactos, los mensajes y la
+`ENCRYPTION_KEY` se conservan. Mientras compila la versión nueva, el CRM deja
+de responder durante unos 3 minutos.
+
+| Situación | Qué hace el comando |
+|---|---|
+| Ya tiene la versión revisada | Termina sin cambiar nada. |
+| La versión nueva trae migraciones | Se detiene sin tocar nada. Exporte un backup en Supabase y repita con `--aplicar-migraciones`. |
+| El código del CRM tiene cambios locales | Se detiene y no los pisa. |
+| Una actualización anterior se interrumpió | Repetir el comando la completa. |
+
+Para volver a una versión anterior, use el commit que el comando muestra al
+terminar:
+
+```bash
+npm run actualizar -- --docker --commit <hash>
+```
+
+Las migraciones ya aplicadas no se revierten. `npm run check` muestra la
+versión instalada y avisa cuando hay una más nueva. Consulte los detalles en
+[Actualizaciones](docs/06-actualizaciones.md).
+
 ## Comandos disponibles
 
 La ruta Docker anterior es la opción principal. Estos comandos existen para
@@ -165,6 +197,7 @@ diagnóstico, despliegue o flujos avanzados:
 | `npm run levantar` | Elige Docker cuando está disponible o usa Node como alternativa. |
 | `npm run levantar -- --node` | Inicia el CRM localmente con Node. |
 | `npm run check` | Diagnostica el estado de la instalación. |
+| `npm run actualizar -- --docker` | Actualiza el CRM a la versión revisada o, con `--commit`, a otra versión. |
 | `npm run tunel` | Crea una URL pública temporal para pruebas. |
 | `npm run vps` | Prepara el despliegue con HTTPS desde el servidor. |
 | `npm run vincular` | Vincula un archivo de credenciales almacenado fuera del repositorio. |
