@@ -165,7 +165,12 @@ export const runDockerUpdate = async ({
     );
   }
 
-  const updaterArguments = ["compose", "--profile", "update", "run", "--rm", "-T", "updater"];
+  // Extra arguments after the service name replace its whole compose `command`,
+  // so the updater entrypoint must be repeated explicitly.
+  const updaterArguments = [
+    "compose", "--profile", "update", "run", "--rm", "-T", "updater",
+    "node", "/app/scripts/container/update-crm.mjs",
+  ];
   if (options.commit !== null) updaterArguments.push("--commit", options.commit);
   if (options.aplicarMigraciones) updaterArguments.push("--aplicar-migraciones");
 

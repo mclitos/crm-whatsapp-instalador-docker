@@ -90,7 +90,10 @@ test("--sin-pull skips git pull and the flags are forwarded to the updater", asy
 
   assert.equal(harness.has("git pull"), false);
   const updater = harness.commands.find((command) => command.includes("updater") && command.includes("run"));
-  assert.deepEqual(updater.slice(-4), ["updater", "--commit", CURRENT, "--aplicar-migraciones"]);
+  assert.deepEqual(updater.slice(-6), [
+    "updater", "node", "/app/scripts/container/update-crm.mjs",
+    "--commit", CURRENT, "--aplicar-migraciones",
+  ]);
 });
 
 test("an unchanged version does not restart the CRM", async () => {
