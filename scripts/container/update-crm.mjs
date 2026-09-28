@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 
-import { CrmUpdateError, parseUpdateArguments, runCrmUpdate } from "../lib/crm-update.mjs";
-import { readSourceRevision } from "../lib/crm-readiness.mjs";
-import { readPinnedCrmVersion } from "../lib/crm-source.mjs";
+import { CrmUpdateError, parseUpdateArguments, resolveUpdateSource, runCrmUpdate } from "../lib/crm-update.mjs";
+import {
+  parseReadinessMarker,
+  READY_MARKER_NAME,
+  readSourceRevision,
+} from "../lib/crm-readiness.mjs";
+import { resolveCrmSource } from "../lib/crm-source.mjs";
 import { CrmWorkspace, resolveCrmWorkspaceDir } from "../lib/crm-workspace.mjs";
 import { SupabaseAdmin } from "../lib/supabase.mjs";
 import { EncryptedCredentialStore } from "../web/encrypted-store.mjs";
@@ -16,8 +22,6 @@ const RESULT_PREFIX = "CRM_UPDATE_RESULT=";
 const main = async () => {
   const options = parseUpdateArguments(process.argv.slice(2));
   const directory = resolveCrmWorkspaceDir();
-  const target = options.commit ?? readPinnedCrmVersion().commit;
-
   let credentials;
   try {
     credentials = await new EncryptedCredentialStore().load({ createKey: false });
@@ -37,6 +41,20 @@ const main = async () => {
     );
   }
 
+  const { repoUrl, target } = resolveUpdateSource({
+    commit: options.commit,
+    source: resolveCrmSource(),
+  });
+
+  const readMarkerRevision = async (workspaceDirectory) => {
+    try {
+      const marker = parseReadinessMarker(await readFile(resolve(workspaceDirectory, READY_MARKER_NAME), "utf8"));
+      return marker.sourceRevision;
+    } catch {
+      return null;
+    }
+  };
+
   const git = async (args) => (await execFileAsync("git", ["-C", directory, ...args], {
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     maxBuffer: 8 * 1024 * 1024,
@@ -44,6 +62,7 @@ const main = async () => {
 
   const result = await runCrmUpdate({
     target,
+    repoUrl,
     allowMigrations: options.allowMigrations,
     directory,
     git,
@@ -51,6 +70,7 @@ const main = async () => {
     ref: credentials.supabaseProjectRef,
     workspace: new CrmWorkspace({ directory }),
     readRevision: readSourceRevision,
+    readMarkerRevision,
     log: (line) => console.log(line),
   });
 

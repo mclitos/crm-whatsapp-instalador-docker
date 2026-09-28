@@ -100,7 +100,8 @@ El comando hace esto, en este orden, y se detiene ante el primer problema:
 2. **Reconstruye la imagen de Docker** con el `crm-version.json` nuevo.
 3. **Corre el actualizador dentro de Docker** (servicio `updater`, perfil
    `update`). Ahí:
-   1. **Compara versiones.** Si ya tenés la fijada, termina sin hacer nada.
+   1. **Compara versiones.** Si ya tenés la fijada, no falta ninguna migración
+      y el marcador está al día, termina sin hacer nada.
    2. **Revisa cambios locales** en el código del CRM. Si alguien lo modificó a
       mano, se detiene y no pisa nada. Los marcadores `.installer-ready.json` y
       `.installer-build.json` no cuentan como cambios: git los ve como archivos
@@ -130,9 +131,27 @@ El primer intento se detiene y muestra la lista. Entonces:
    npm run actualizar -- --docker --aplicar-migraciones
    ```
 
-Si una migración falla a mitad de camino, el código ya está en la versión nueva:
-repetí el mismo comando (las migraciones aplicadas se saltean) o volvé atrás
-como se explica más abajo.
+Si una migración (o la verificación del esquema) falla a mitad de camino, el
+código ya está en la versión nueva. **Repetí el mismo comando**, con
+`--aplicar-migraciones` si quedaban migraciones: aunque el código ya coincida,
+el actualizador vuelve a comparar con Supabase, aplica solo lo que falta,
+verifica el esquema y actualiza el marcador. El CRM se reinicia en esa corrida.
+Solo dice "ya estás en esa versión" cuando no falta nada y el marcador está al
+día. También podés volver atrás como se explica más abajo.
+
+### Si instalaste con `CRM_REPO_URL`
+
+Esa instalación sigue otro repositorio, no la versión fijada en
+`crm-version.json`. Para no moverla sin querer al commit de `ArnasDon/wacrm`,
+el actualizador se detiene y pide el commit a mano:
+
+```bash
+npm run actualizar -- --docker --commit <hash completo de 40 caracteres>
+```
+
+El commit se descarga de ese mismo repositorio (`CRM_REPO_URL`). En las
+instalaciones con la versión fijada se descarga del repositorio indicado en
+`crm-version.json`, sin tocar el `origin` del checkout.
 
 ### Cómo saber qué versión tenés
 

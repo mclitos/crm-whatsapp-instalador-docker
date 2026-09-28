@@ -73,6 +73,8 @@ Installs age while wacrm keeps shipping fixes. People who do not program need a 
 
 ## Progress
 
+- T2 reopened after independent verification, reason: (1) rerunning after an interruption post-checkout returned `unchanged` and never applied migrations; (2) fetch used `origin`, which is the fork on existing installs; (3) `CRM_REPO_URL` installs would silently move to the pinned upstream commit. Fixed in `fix(crm): make interrupted updates resumable`: same-revision runs still compare migrations and the readiness marker and report `updated` when work remained; fetch uses the explicit repo URL (`CRM_REPO_URL` via compose `${CRM_REPO_URL:-}` or `crm-version.json`); custom sources require `--commit`. Docs updated. `npm test`: 166 pass, 0 fail; `git diff --check`: clean; `docker compose config -q`: ok.
+
 - Pre-implementation: dry run and real manual update of the live install from `80c3f9a` to `45e80ad` succeeded (≈3 min downtime, 0 migrations, data intact).
 
 ## Next step

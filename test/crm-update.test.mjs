@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CrmUpdateError, parseUpdateArguments, runCrmUpdate } from "../scripts/lib/crm-update.mjs";
+import { CrmUpdateError, parseUpdateArguments, resolveUpdateSource, runCrmUpdate } from "../scripts/lib/crm-update.mjs";
 
 const INSTALLED = "a".repeat(40);
 const TARGET = "b".repeat(40);
@@ -16,6 +16,7 @@ const createHarness = ({
   fetchError = null,
   migrationError = null,
   verifyOk = true,
+  markerRevision = revision,
 } = {}) => {
   const calls = [];
   const events = [];
@@ -53,7 +54,9 @@ const createHarness = ({
     admin,
     ref: "project-ref",
     workspace,
+    repoUrl: "https://github.com/ArnasDon/wacrm.git",
     readRevision: async () => revision,
+    readMarkerRevision: async () => markerRevision,
     applyMigrations,
     log: (line) => logs.push(line),
     ...overrides,
@@ -71,14 +74,82 @@ const rejectsWith = async (promise, code) => {
   });
 };
 
-test("the same version is a no-op that touches nothing", async () => {
+test("the same version with nothing pending and a current marker is a no-op that changes nothing", async () => {
   const harness = createHarness({ revision: TARGET });
   const result = await harness.run();
 
   assert.equal(result.status, "unchanged");
-  assert.deepEqual(harness.calls, []);
+  assert.equal(harness.calls.some(([command]) => ["fetch", "checkout", "status"].includes(command)), false);
   assert.deepEqual(harness.events, []);
   assert.match(harness.logs.join("\n"), /ya está en la versión/u);
+});
+
+test("an update interrupted after checkout requires the flag on rerun and does not check out again", async () => {
+  const harness = createHarness({ revision: TARGET, applied: ["001"] });
+
+  await assert.rejects(harness.run(), (error) => {
+    assert.equal(error.code, "MIGRATIONS_PENDING");
+    assert.match(error.message, /se interrumpió/u);
+    assert.match(error.message, /002_second\.sql/u);
+    return true;
+  });
+  assert.deepEqual(harness.events, []);
+});
+
+test("rerunning an interrupted update with the flag applies the pending migrations, verifies, and marks ready", async () => {
+  const harness = createHarness({ revision: TARGET, applied: ["001"] });
+  const result = await harness.run({ allowMigrations: true });
+
+  assert.equal(result.status, "updated");
+  assert.equal(result.previous, TARGET);
+  assert.equal(result.current, TARGET);
+  assert.equal(result.migrationsApplied, 1);
+  assert.deepEqual(harness.events, ["applyMigrations", "verify", "markReady"]);
+  assert.equal(harness.checkedOut(), false);
+  assert.equal(harness.calls.some(([command]) => command === "fetch"), false);
+});
+
+test("a stale readiness marker at the target revision is refreshed and reported as updated", async () => {
+  const harness = createHarness({ revision: TARGET, markerRevision: INSTALLED });
+  const result = await harness.run();
+
+  assert.equal(result.status, "updated");
+  assert.deepEqual(harness.events, ["verify", "markReady"]);
+  assert.equal(harness.checkedOut(), false);
+});
+
+test("a schema verification failure after checkout is retried by rerunning", async () => {
+  const failing = createHarness({ verifyOk: false });
+  await rejectsWith(failing.run(), "SCHEMA_VERIFICATION_FAILED");
+  assert.equal(failing.events.includes("markReady"), false);
+
+  const rerun = createHarness({ revision: TARGET, markerRevision: INSTALLED });
+  assert.equal((await rerun.run()).status, "updated");
+});
+
+test("the target is fetched from the explicit repository, never from origin", async () => {
+  const harness = createHarness();
+  await harness.run();
+
+  assert.deepEqual(
+    harness.calls.find(([command]) => command === "fetch"),
+    ["fetch", "--depth", "1", "https://github.com/ArnasDon/wacrm.git", TARGET],
+  );
+});
+
+test("a CRM_REPO_URL install must name the commit explicitly", () => {
+  const custom = { repoUrl: "https://example.com/fork.git", commit: null };
+  assert.throws(
+    () => resolveUpdateSource({ commit: null, source: custom }),
+    (error) => error.code === "CUSTOM_SOURCE" && /--commit <hash/u.test(error.action),
+  );
+  assert.deepEqual(
+    resolveUpdateSource({ commit: TARGET, source: custom }),
+    { repoUrl: custom.repoUrl, target: TARGET },
+  );
+  const pinned = { repoUrl: "https://github.com/ArnasDon/wacrm.git", commit: INSTALLED };
+  assert.equal(resolveUpdateSource({ commit: null, source: pinned }).target, INSTALLED);
+  assert.equal(resolveUpdateSource({ commit: TARGET, source: pinned }).target, TARGET);
 });
 
 test("tracked local changes stop the update before anything is fetched", async () => {
