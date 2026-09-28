@@ -198,6 +198,7 @@ por incumplimiento de políticas, calidad baja o falta de consentimiento.
 | [Despliegue](docs/03-deploy.md) | Para exponer el CRM temporalmente o publicarlo con HTTPS. |
 | [Costes](docs/04-costos.md) | Antes de presupuestar infraestructura o mensajería. |
 | [Problemas conocidos](docs/05-gotchas.md) | Cuando el diagnóstico señala una configuración incompleta o algo deja de responder. |
+| [Actualizaciones](docs/06-actualizaciones.md) | Para actualizar el CRM instalado con `npm run actualizar -- --docker` o volver a una versión anterior. |
 
 ## Licencia y atribución
 

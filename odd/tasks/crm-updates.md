@@ -65,10 +65,11 @@ Installs age while wacrm keeps shipping fixes. People who do not program need a 
   - Acceptance: `npm run actualizar -- --docker` pulls installer (`--ff-only`, refuses dirty tree), rebuilds image, runs updater, restarts `crm`, waits for health, reports downtime expectation; `npm run check` shows installed vs pinned version.
   - Checks: `npm test`, `git diff --check`, real run against the live install.
   - Evidence: commit recorded in `git log -- scripts/actualizar.mjs`; files `scripts/actualizar.mjs`, `scripts/lib/actualizar-docker.mjs`, `scripts/lib/check-workspace.mjs` (probe reads HEAD; `reportCrmVersion`), `scripts/check.mjs`, `package.json`, `test/actualizar-docker.test.mjs`, `test/check-workspace.test.mjs`. `npm test`: 160 pass, 0 fail; `git diff --check`: clean; `npm run check` (read-only, live install) prints "CRM en la versión 45e80ad9e23b ... es la versión revisada"; `node scripts/actualizar.mjs` without `--docker` gives the actionable message. Real update run: pending, done by the parent.
-- [ ] **T4 — Documentation including rollback**
+- [x] **T4 — Documentation including rollback**
   - Route: delegated direct.
   - Acceptance: `docs/06-actualizaciones.md` describes the implemented behavior (status note removed) with a "Volver a una versión anterior" section; README points to it.
   - Checks: structural readback, `git diff --check`.
+  - Evidence: commit recorded in `git log -- docs/06-actualizaciones.md`; files `docs/06-actualizaciones.md`, `README.md`. Readback: status note removed, new "Volver a una versión anterior" section, README docs table links the guide; `npm test`: 160 pass, 0 fail; `git diff --check`: clean.
 
 ## Progress
 
@@ -76,4 +77,4 @@ Installs age while wacrm keeps shipping fixes. People who do not program need a 
 
 ## Next step
 
-T4, then the parent runs the real `npm run actualizar -- --docker`.
+The parent runs the real `npm run actualizar -- --docker` against the live install.
