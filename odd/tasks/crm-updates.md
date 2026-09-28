@@ -79,6 +79,9 @@ Installs age while wacrm keeps shipping fixes. People who do not program need a 
 
 - Live run (parent, 2026-09-28): `npm run actualizar -- --docker --sin-pull` rebuilt images, the updater read Supabase applied migrations through the encrypted `/data` credentials, and reported `unchanged` at `45e80ad`; no restart, CRM stayed `healthy`. `npm run check` prints "CRM en la versión 45e80ad9e23b es la versión revisada de este instalador". Known minor UX: the "apagado unos 3 minutos" notice prints before knowing whether an update is needed. Rollback path (`--commit <older>`) covered by tests but not yet exercised live.
 
+- Live rollback (parent, 2026-09-28): first attempt with `--commit` failed safely (`node: bad option: --commit`, CRM untouched) because `docker compose run updater <args>` replaces the service command; the unit test had asserted that shape. Fixed in `677f050` (`fix(actualizar): pass updater entrypoint when forwarding flags`), `npm test` 166 pass. Retry: `45e80ad` -> `80c3f9a` in ~2.5 min with the rollback warning, 0 migrations, `healthy`; forward again `80c3f9a` -> `45e80ad` with no flags, `healthy`; `npm run check`: version is the reviewed one, 37 tables, 42 migrations, ENCRYPTION_KEY present.
+- Known follow-ups: the success line hardcodes `http://127.0.0.1:3300` and ignores `HOST_BIND_ADDRESS` (same pre-existing issue as `levantar.mjs`); the downtime notice prints even when nothing changes.
+
 ## Next step
 
-Optional live rollback test; then merge `feat/crm-updates` into `main` when the user decides.
+Merge `feat/crm-updates` into `main` when the user decides.
