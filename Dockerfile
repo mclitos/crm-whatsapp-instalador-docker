@@ -10,7 +10,7 @@ RUN apt-get update \
     && chown -R node:node /app /workspace \
     && chmod 1777 /data
 
-COPY --chown=node:node package.json credenciales.env.example ./
+COPY --chown=node:node package.json credenciales.env.example crm-version.json ./
 COPY --chown=node:node scripts ./scripts
 COPY --chown=node:node deploy ./deploy
 

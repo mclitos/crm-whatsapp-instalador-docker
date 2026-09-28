@@ -97,6 +97,27 @@ services:
     volumes:
       - installer-data:/data:ro
 
+  updater:
+    build:
+      context: .
+    command:
+      - node
+      - /app/scripts/container/update-crm.mjs
+    profiles:
+      - update
+    init: true
+    restart: "no"
+    user: "1000:1000"
+    depends_on:
+      crm-workspace-init:
+        condition: service_completed_successfully
+    environment:
+      WEB_INSTALLER_DATA_DIR: "/data/installer"
+      CRM_WORKSPACE_DIR: "/workspace/crm"
+    volumes:
+      - installer-data:/data:ro
+      - crm-source:/workspace/crm
+
 volumes:
   installer-data:
   crm-source:

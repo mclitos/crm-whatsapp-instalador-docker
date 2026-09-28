@@ -132,7 +132,7 @@ const resolveProject = async ({ input, admin, credentialStore, organizations, re
   return { ref, project: created.json, created: true };
 };
 
-const applyMigrations = async ({ admin, ref, workspace, report }) => {
+export const applyMigrations = async ({ admin, ref, workspace, report }) => {
   const migrations = await workspace.readMigrations();
   await report("preparing_migrations", { current: 0, total: migrations.length });
   requireOk(
