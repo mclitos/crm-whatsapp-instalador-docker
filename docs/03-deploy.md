@@ -188,12 +188,22 @@ rama por defecto de ese repositorio).
 Si querés tu propia copia —para deployar desde tu GitHub, cambiarle el logo,
 ponerle tu marca— la licencia MIT te deja:
 
-1. Forkeá `github.com/ArnasDon/wacrm` a tu cuenta.
-2. Antes de correr el paso 1, agregá a `credenciales.env`:
+1. Crea un fork de `github.com/ArnasDon/wacrm` en tu cuenta.
+2. Si todavía no se clonó el CRM, agrega a `credenciales.env` antes de correr el paso 1:
    ```
    CRM_REPO_URL=https://github.com/TU-USUARIO/wacrm.git
    ```
-3. Borrá `./crm` si ya existía y corré `npm run paso1`.
+3. Corre `npm run paso1` para clonar ese origen.
+
+**Si `./crm` ya existe, no lo borres para cambiar de fork.** Ahí también está
+`crm/.env.local`, incluida la `ENCRYPTION_KEY` que permite leer los tokens de
+WhatsApp ya guardados. Borrar esa carpeta puede dejar esos tokens ilegibles.
+El proceso de `docs/06-actualizaciones.md` sirve para actualizar el origen ya
+configurado; no es un procedimiento para cambiar de fork. No hay un cambio de
+origen automatizado documentado: conserva el checkout actual y, antes de
+cualquier reemplazo manual, respalda `crm/.env.local` en un lugar seguro y
+confirma que la copia conserva la `ENCRYPTION_KEY`. Si no puedes verificar ese
+respaldo, detente y no reemplaces `./crm`.
 
 **Lo que MIT te permite:** usarlo, modificarlo, ponerle tu marca, venderlo.
 **Lo único que exige:** conservar el aviso de copyright y el archivo `LICENSE`
