@@ -103,6 +103,19 @@ Meta revisa el *display name*. Rechaza los genéricos ("Ventas", "Oficial",
 
 ## Supabase
 
+### No puedo leer las credenciales cifradas
+
+Si el mensaje indica **falta de permisos**, revisá el acceso al directorio de
+datos del instalador y a sus archivos. Si indica **sistema de archivos de solo
+lectura**, revisá el montaje: el instalador necesita escritura para guardar
+configuración. Los diagnósticos que solo consultan datos deben usar el modo de
+lectura sin crear claves ni ajustar permisos (`load({ createKey: false })`).
+
+Estos errores no demuestran que las credenciales estén dañadas. **No borres la
+clave maestra ni el archivo cifrado**, y no abras los permisos a todo el mundo.
+El aviso de archivo dañado o modificado se conserva para los errores de formato
+o descifrado, no para estos fallos de acceso.
+
 ### El instalador web no puede guardar una tarea
 
 Revisá el espacio disponible y los permisos del directorio de datos del

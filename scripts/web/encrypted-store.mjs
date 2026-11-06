@@ -158,10 +158,12 @@ export class EncryptedCredentialStore {
       const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
       return validateCredentials(JSON.parse(plaintext.toString("utf8")));
     } catch (error) {
-      throw new EncryptedStoreError(
-        "No pude leer las credenciales cifradas. El archivo puede estar dañado o haber sido modificado.",
-        { cause: error },
-      );
+      const message = hasErrorCode(error, "EROFS")
+        ? "No pude acceder a las credenciales cifradas: el sistema de archivos es de solo lectura. Revisá el montaje del volumen de datos; para ejecutar el instalador tiene que permitir escritura. No borres la clave maestra ni las credenciales."
+        : ["EACCES", "EPERM"].some((code) => hasErrorCode(error, code))
+          ? "No pude leer las credenciales cifradas por falta de permisos. Revisá los permisos del directorio de datos y sus archivos. No borres la clave maestra ni las credenciales."
+          : "No pude leer las credenciales cifradas. El archivo puede estar dañado o haber sido modificado.";
+      throw new EncryptedStoreError(message, { cause: error });
     }
   }
 

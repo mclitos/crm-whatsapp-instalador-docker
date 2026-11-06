@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createCipheriv, randomBytes } from "node:crypto";
+import filesystem from "node:fs/promises";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -111,8 +113,82 @@ test("tampered ciphertext is rejected with a safe store error", async () => {
 
   await assert.rejects(
     store.load(),
-    (error) => error instanceof EncryptedStoreError && !error.message.includes("sbp_tamper-test"),
+    (error) => {
+      assert.ok(error instanceof EncryptedStoreError);
+      assert.equal(error.message, "No pude leer las credenciales cifradas. El archivo puede estar dañado o haber sido modificado.");
+      assert.equal(error.message.includes("sbp_tamper-test"), false);
+      return true;
+    },
   );
+});
+
+const permissionMessage = "No pude leer las credenciales cifradas por falta de permisos. Revisá los permisos del directorio de datos y sus archivos. No borres la clave maestra ni las credenciales.";
+const readOnlyMessage = "No pude acceder a las credenciales cifradas: el sistema de archivos es de solo lectura. Revisá el montaje del volumen de datos; para ejecutar el instalador tiene que permitir escritura. No borres la clave maestra ni las credenciales.";
+
+for (const code of ["EACCES", "EPERM", "EROFS"]) {
+  for (const file of ["master.key", "supabase-connection.enc.json"]) {
+    test(`${code} reading ${file} is actionable without claiming corrupted credentials`, async (t) => {
+      const { directory, store } = await createStore();
+      const credentials = { supabaseAccessToken: "sbp_private-permission-token", supabaseProjectRef: null };
+      await store.save(credentials);
+      const keyPath = join(directory, "master.key");
+      const encryptedPath = join(directory, "supabase-connection.enc.json");
+      const previousKey = await readFile(keyPath);
+      const previousEncrypted = await readFile(encryptedPath);
+      const originalRead = filesystem.readFile;
+      const injected = Object.assign(new Error("private-token-and-filesystem-details"), { code });
+      t.mock.method(filesystem, "readFile", async (path, ...args) => {
+        if (path === join(directory, file)) throw injected;
+        return originalRead(path, ...args);
+      });
+      syncBuiltinESMExports();
+      try {
+        await assert.rejects(store.load({ createKey: false }), (error) => {
+          assert.ok(error instanceof EncryptedStoreError);
+          assert.equal(error.message, code === "EROFS" ? readOnlyMessage : permissionMessage);
+          assert.equal(error.cause, injected);
+          assert.equal(/dañado|modificado|private-token|sbp_private|master\.key/u.test(error.message), false);
+          return true;
+        });
+      } finally {
+        t.mock.restoreAll();
+        syncBuiltinESMExports();
+      }
+      assert.deepEqual(await readFile(keyPath), previousKey);
+      assert.deepEqual(await readFile(encryptedPath), previousEncrypted);
+      assert.deepEqual(await store.load({ createKey: false }), { ...credentials, supabaseDbPassword: null });
+    });
+  }
+}
+
+test("default load reports a read-only chmod failure without replacing encrypted data or key", async (t) => {
+  if (process.platform === "win32") { t.skip("chmod normalization is not used on Windows"); return; }
+  const { directory, store } = await createStore();
+  await store.save({ supabaseAccessToken: "sbp_read-only-token", supabaseProjectRef: null });
+  const keyPath = join(directory, "master.key");
+  const encryptedPath = join(directory, "supabase-connection.enc.json");
+  const previousKey = await readFile(keyPath);
+  const previousEncrypted = await readFile(encryptedPath);
+  const originalChmod = filesystem.chmod;
+  t.mock.method(filesystem, "chmod", async (path, ...args) => {
+    if (path === directory) throw Object.assign(new Error("private-volume-details"), { code: "EROFS" });
+    return originalChmod(path, ...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(store.load(), (error) => {
+      assert.ok(error instanceof EncryptedStoreError);
+      assert.equal(error.message, readOnlyMessage);
+      assert.equal(error.cause.code, "EROFS");
+      return true;
+    });
+    assert.equal((await store.load({ createKey: false })).supabaseAccessToken, "sbp_read-only-token");
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual(await readFile(keyPath), previousKey);
+  assert.deepEqual(await readFile(encryptedPath), previousEncrypted);
 });
 
 test("the key directory and secret files use restrictive permissions", async () => {
