@@ -112,7 +112,7 @@ export const waitForCrmHealth = async ({
 
 /**
  * Actualiza una instalación Docker: instalador al día, imagen reconstruida,
- * actualizador dentro del contenedor y reinicio del CRM solo si hubo cambio.
+ * actualizador dentro del contenedor y reconciliación del CRM con verificación de salud.
  */
 export const runDockerUpdate = async ({
   directory,
@@ -194,8 +194,7 @@ export const runDockerUpdate = async ({
     );
   }
   if (result.status === "unchanged") {
-    log("Nada que reiniciar: el CRM ya estaba en esa versión.");
-    return { status: "unchanged", ...result };
+    log("El código ya está en esa versión. Reinicio el CRM para completar cualquier actualización interrumpida.");
   }
 
   log("Reiniciando el CRM. Puede tardar unos minutos (unos 3): compila la versión nueva antes de responder.");
@@ -203,7 +202,7 @@ export const runDockerUpdate = async ({
     runInherit("docker", ["compose", "up", "-d", "--force-recreate", "crm"], cwd);
   } catch {
     throw new ActualizarError(
-      "El código se actualizó, pero no pude reiniciar el CRM.",
+      "El código está preparado, pero no pude reiniciar el CRM.",
       "Corré: docker compose up -d --force-recreate crm",
     );
   }
@@ -218,6 +217,6 @@ export const runDockerUpdate = async ({
         + `npm run actualizar -- --docker --commit ${result.previous}`,
     );
   }
-  log(`CRM actualizado: ${result.previous.slice(0, 12)} -> ${result.current.slice(0, 12)}. Ya responde en http://127.0.0.1:3300`);
-  return { status: "updated", health, ...result };
+  log(`CRM verificado y saludable: ${result.previous.slice(0, 12)} -> ${result.current.slice(0, 12)}.`);
+  return { ...result, health };
 };

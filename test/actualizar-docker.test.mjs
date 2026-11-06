@@ -96,12 +96,41 @@ test("--sin-pull skips git pull and the flags are forwarded to the updater", asy
   ]);
 });
 
-test("an unchanged version does not restart the CRM", async () => {
-  const harness = createHarness({ updaterStdout: resultLine("unchanged") });
+test("an unchanged checkout reconciles a potentially stale runtime and waits for health", async () => {
+  const harness = createHarness({
+    updaterStdout: resultLine("unchanged"),
+    healthStates: ["starting", "healthy"],
+  });
   const result = await harness.run();
 
   assert.equal(result.status, "unchanged");
-  assert.equal(harness.has("docker compose up"), false);
+  assert.equal(result.health, "healthy");
+  const restart = harness.commands.findIndex((command) => command.join(" ") === "docker compose up -d --force-recreate crm");
+  const checks = harness.commands.flatMap((command, index) => command.join(" ").startsWith("docker compose ps") ? [index] : []);
+  assert.ok(restart >= 0);
+  assert.equal(checks.length, 2);
+  assert.ok(checks.every((index) => index > restart));
+  assert.equal(harness.logs.includes("Nada que reiniciar: el CRM ya estaba en esa versión."), false);
+});
+
+for (const state of ["stopped", "unhealthy"]) {
+  test(`an unchanged checkout does not report success when the runtime remains ${state}`, async () => {
+    const harness = createHarness({ updaterStdout: resultLine("unchanged"), healthStates: [state] });
+
+    await rejectsAlreadyExplained(harness.run(), /no quedó saludable/u);
+    assert.equal(harness.has("docker compose up -d --force-recreate crm"), true);
+    assert.equal(harness.has("docker compose ps"), true);
+  });
+}
+
+test("an unchanged checkout reports a failed recreation instead of succeeding", async () => {
+  const harness = createHarness({
+    updaterStdout: resultLine("unchanged"),
+    failing: "docker compose up",
+  });
+
+  await rejectsAlreadyExplained(harness.run(), /no pude reiniciar/u);
+  assert.equal(harness.has("docker compose ps"), false);
 });
 
 test("pending migrations exit code 2 explains the confirmation flow and does not restart", async () => {

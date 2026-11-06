@@ -24,9 +24,9 @@ try {
       "Corré: npm run actualizar -- --docker",
     );
   }
-  info("Con Docker el CRM queda apagado unos 3 minutos mientras compila la versión nueva.");
+  info("El CRM se reinicia y se verifica incluso si el código no cambió. Si necesita compilar, puede tardar unos 3 minutos.");
   const result = await runDockerUpdate({ directory: ROOT, options });
-  console.log(`\n${C.green(C.bold(result.status === "updated" ? "✓ CRM actualizado." : "✓ Sin cambios."))}\n`);
+  console.log(`\n${C.green(C.bold(result.status === "updated" ? "✓ CRM actualizado y saludable." : "✓ Código sin cambios; CRM reiniciado y saludable."))}\n`);
 } catch (error) {
   if (error instanceof ActualizarError) morir(error.message, error.action);
   throw error;

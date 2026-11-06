@@ -101,7 +101,8 @@ El comando hace esto, en este orden, y se detiene ante el primer problema:
 3. **Corre el actualizador dentro de Docker** (servicio `updater`, perfil
    `update`). Ahí:
    1. **Compara versiones.** Si ya tenés la fijada, no falta ninguna migración
-      y el marcador está al día, termina sin hacer nada.
+      y el marcador está al día, informa que el código no cambió. El comando
+      igualmente completa el reinicio y la comprobación de salud del paso 4.
    2. **Revisa cambios locales** en el código del CRM. Si alguien lo modificó a
       mano, se detiene y no pisa nada. Los marcadores `.installer-ready.json` y
       `.installer-build.json` no cuentan como cambios: git los ve como archivos
@@ -115,9 +116,13 @@ El comando hace esto, en este orden, y se detiene ante el primer problema:
       Las que ya estaban aplicadas se saltean solas.
    6. **Vuelve a marcar el CRM como listo** para que el marcador registre la
       versión nueva, y muestra la versión anterior y el comando para volver.
-4. **Reinicia el CRM** solo si hubo cambio. Al detectar código nuevo,
-   reinstala dependencias y recompila. **El CRM no responde mientras tanto**
-   (unos 3 minutos; el comando espera hasta que esté saludable).
+4. **Recrea el contenedor del CRM y comprueba su salud**, incluso si el código
+   no cambió. Así un reintento completa una actualización interrumpida antes
+   del reinicio, sin confundir el código preparado con la versión en ejecución.
+   Si el build está vigente se reutiliza; si detecta código nuevo, reinstala
+   dependencias y recompila. **El CRM no responde durante el reinicio**
+   (unos 3 minutos si necesita compilar; el comando espera hasta que esté
+   saludable y falla si no lo consigue).
 
 ### Cuando hay migraciones nuevas
 
@@ -136,8 +141,10 @@ código ya está en la versión nueva. **Repetí el mismo comando**, con
 `--aplicar-migraciones` si quedaban migraciones: aunque el código ya coincida,
 el actualizador vuelve a comparar con Supabase, aplica solo lo que falta,
 verifica el esquema y actualiza el marcador. El CRM se reinicia en esa corrida.
-Solo dice "ya estás en esa versión" cuando no falta nada y el marcador está al
-día. También podés volver atrás como se explica más abajo.
+El resultado de código sin cambios solo se considera exitoso después de
+reiniciar y verificar el CRM. Esto también permite completar un intento que
+preparó el código pero se interrumpió antes de reiniciar el contenedor.
+También podés volver atrás como se explica más abajo.
 
 ### Si instalaste con `CRM_REPO_URL`
 
