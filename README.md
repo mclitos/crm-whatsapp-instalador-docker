@@ -190,7 +190,7 @@ diagnóstico, despliegue o flujos avanzados:
 | Comando | Uso |
 |---|---|
 | `npm run web` | Abre el instalador local sin Docker en `http://127.0.0.1:7359`. |
-| `npm run instalar` | Ejecuta el flujo clásico por consola. |
+| `npm run instalar` | Ejecuta el flujo clásico por consola; termina con código de error si falla algún paso, incluido el diagnóstico final. |
 | `npm run creds` | Valida las credenciales del flujo clásico. |
 | `npm run paso1` | Prepara Supabase, sus migraciones, Auth y el entorno del CRM. |
 | `npm run paso2` | Configura Meta y WhatsApp después de disponer de una URL pública. |

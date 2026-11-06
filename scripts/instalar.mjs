@@ -82,4 +82,4 @@ if (!(await confirmar("  ¿Está arriba?", true))) {
 if (!paso("paso2-meta.mjs")) salir(1);
 
 // ── 5 ───────────────────────────────────────────────────────────────────────
-paso("check.mjs");
+if (!paso("check.mjs")) salir(1);
