@@ -57,7 +57,7 @@ if (!creds.PUBLIC_URL) {
 
     ${C.bold("b)")} Deployarlo en serio
        Tu VPS, Vercel, Railway, EasyPanel, Hostinger. Cualquiera sirve:
-       el repo ya trae Dockerfile y docker-compose.yml.
+       Para VPS usá npm run vps; para otras plataformas, seguí docs/03-deploy.md.
 
   Cuando tengas la URL, ponela en ${C.bold("PUBLIC_URL")} de credenciales.env y corré:
 

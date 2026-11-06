@@ -21,7 +21,7 @@ paso2
 check
 `;
 
-const runInstaller = async (t, checkCode) => {
+const runInstaller = async (t, checkCode, publicUrl = "https://example.invalid") => {
   const directory = await mkdtemp(join(tmpdir(), "crm-installer-exit-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const scripts = join(directory, "scripts");
@@ -36,7 +36,7 @@ const runInstaller = async (t, checkCode) => {
     export const C = { bold: value => value, dim: value => value };
     export const encabezado = value => console.log("HEADER:" + value);
     export const info = () => {};
-    export const leerEnv = () => ({ PUBLIC_URL: "https://example.invalid" });
+    export const leerEnv = () => ({ PUBLIC_URL: ${JSON.stringify(publicUrl)} });
     export const confirmar = async () => true;
     export const salir = code => process.exit(code);
     export const rutaCredenciales = () => "unused";
@@ -69,6 +69,38 @@ test("the installer fails when its final diagnostic fails, preserving child outp
   assert.equal(result.status, 1);
   assert.equal(result.stdout, expectedStdout);
   assert.equal(result.stderr, "diagnóstico fallido de prueba\n");
+});
+
+test("missing public URL explains the VPS route without naming an ambiguous compose file", async (t) => {
+  const result = await runInstaller(t, 0, "");
+  const intro = expectedStdout.slice(0, expectedStdout.indexOf("HEADER:"));
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout, intro + `HEADER:Falta un solo dato: tu URL pública
+
+  Supabase ya está listo y el CRM configurado. Lo que sigue —conectar
+  WhatsApp— necesita una dirección de internet a la que Meta pueda llegar.
+  Con localhost no alcanza: Meta tiene que poder golpearte la puerta.
+
+  Dos caminos (el detalle está en docs/03-deploy.md)
+
+    a) Probar ya, gratis, en 2 minutos — sin cuenta en ningún lado
+       npm run levantar  en una terminal, y dejala abierta
+       npm run tunel     en otra: te da la URL y la guarda sola
+
+    b) Deployarlo en serio
+       Tu VPS, Vercel, Railway, EasyPanel, Hostinger. Cualquiera sirve:
+       Para VPS usá npm run vps; para otras plataformas, seguí docs/03-deploy.md.
+
+  Cuando tengas la URL, ponela en PUBLIC_URL de credenciales.env y corré:
+
+     npm run paso1   (para que los mails apunten a tu dominio)
+     npm run paso2   (conecta WhatsApp)
+
+`);
 });
 
 test("a successful final diagnostic preserves the installer success and step order", async (t) => {
