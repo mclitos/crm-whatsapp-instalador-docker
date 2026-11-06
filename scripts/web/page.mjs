@@ -102,6 +102,9 @@ export const renderConnectionPage = ({
     .boundary { margin:1.25rem 0 0; padding-left:1rem; border-left:3px solid #d4a72c; color:var(--muted); font-size:.88rem; line-height:1.55; }
     .summary { padding:1rem; border-radius:.7rem; background:#f3efe2; color:var(--muted); line-height:1.55; }
     [hidden] { display:none !important; }
+    .recovery-panel { margin-top:1.25rem; border-color:#d4a72c; box-shadow:none; }
+    .recovery-warning { padding:.85rem 1rem; border-left:3px solid #d4a72c; background:#fbf4df; line-height:1.5; }
+    .recovery-job { overflow-wrap:anywhere; font-family:monospace; }
     @media (max-width:800px) { header,.steps { grid-template-columns:1fr; } h1 { max-width:14ch; } }
     @media (max-width:520px) {
       .progress-path { display:block; }
@@ -183,6 +186,26 @@ export const renderConnectionPage = ({
           </div>
           <button id="setup-button" type="submit">Preparar Supabase y el CRM</button>
         </form>
+        <section id="attention-panel" class="panel recovery-panel" aria-labelledby="attention-title" hidden>
+          <h3 id="attention-title">Revisar una creación de proyecto</h3>
+          <p>El instalador se detuvo mientras creaba un proyecto. Revisá el panel de Supabase y resolvé este trabajo antes de volver a intentar.</p>
+          <div id="attention-list" aria-live="polite"></div>
+          <form id="recovery-form">
+            <fieldset>
+              <legend>¿Qué encontraste en Supabase?</legend>
+              <label class="radio"><input type="radio" name="decision" value="existing" checked> Encontré el proyecto creado</label>
+              <label class="radio"><input type="radio" name="decision" value="not_created"> Confirmo que no se creó ningún proyecto</label>
+            </fieldset>
+            <div id="recovery-existing-fields" class="field">
+              <label for="recovery-ref">Proyecto creado</label>
+              <select id="recovery-ref" required></select>
+            </div>
+            <p class="recovery-warning">Importante: confirmar que no se creó ningún proyecto libera un nuevo intento. Si no revisaste el panel de Supabase, podrías crear proyectos duplicados.</p>
+            <label class="radio"><input id="recovery-confirm" type="checkbox" required> Confirmo que revisé el panel de Supabase y que esta decisión es correcta.</label>
+            <button id="recovery-submit" type="submit" disabled>Guardar esta revisión</button>
+          </form>
+          <p id="recovery-result" class="result" role="status" aria-live="polite"></p>
+        </section>
         <section class="progress-frame" aria-labelledby="installation-progress-title" hidden>
           <h3 id="installation-progress-title" class="progress-title">Progreso de la instalación</h3>
           <ol id="progress-path" class="progress-path">
@@ -213,7 +236,18 @@ export const renderConnectionPage = ({
     const progressCount = document.querySelector("#progress-count");
     const existingSelect = document.querySelector("#existing-project");
     const organizationSelect = document.querySelector("#organization");
+    const attentionPanel = document.querySelector("#attention-panel");
+    const attentionList = document.querySelector("#attention-list");
+    const recoveryForm = document.querySelector("#recovery-form");
+    const recoveryRef = document.querySelector("#recovery-ref");
+    const recoveryConfirm = document.querySelector("#recovery-confirm");
+    const recoverySubmit = document.querySelector("#recovery-submit");
+    const recoveryResult = document.querySelector("#recovery-result");
     const automaticCrmStart = ${JSON.stringify(automaticCrmStart)};
+    let attentionJobs = [];
+    let availableProjects = [];
+    let currentJobId = null;
+    let recoveryInFlight = false;
     const stageIndex = ${JSON.stringify(STAGE_INDEX)};
     let activeStageIndex = 0;
 
@@ -260,7 +294,11 @@ export const renderConnectionPage = ({
     const request = async (url, options = {}) => {
       const response = await fetch(url, options);
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "La solicitud no pudo completarse.");
+      if (!response.ok) {
+        const error = new Error(data.message || "La solicitud no pudo completarse.");
+        error.status = response.status;
+        throw error;
+      }
       return data;
     };
 
@@ -286,18 +324,129 @@ export const renderConnectionPage = ({
       select.append(option);
     };
 
-    const loadOptions = async () => {
+    const loadOptions = async ({ scroll = true, preferredRef = "" } = {}) => {
       const data = await request("/api/supabase/options");
       existingSelect.replaceChildren();
       organizationSelect.replaceChildren();
+      availableProjects = data.projects;
       for (const project of data.projects) addOption(existingSelect, project.ref, project.name + " · " + project.region + " · " + project.status);
       for (const organization of data.organizations) addOption(organizationSelect, organization.slug, organization.name);
-      const preferredRef = document.querySelector("#supabase-project-ref").value.trim();
-      if (preferredRef && [...existingSelect.options].some((option) => option.value === preferredRef)) existingSelect.value = preferredRef;
+      const requestedRef = preferredRef || document.querySelector("#supabase-project-ref").value.trim();
+      if (requestedRef && [...existingSelect.options].some((option) => option.value === requestedRef)) existingSelect.value = requestedRef;
       setupPanel.hidden = false;
-      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-      setupPanel.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+      if (scroll) {
+        const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        setupPanel.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+      }
+      await refreshAttention();
     };
+
+    const renderAttention = () => {
+      attentionPanel.hidden = attentionJobs.length === 0;
+      attentionList.replaceChildren();
+      const job = attentionJobs[0];
+      currentJobId = job?.id || null;
+      recoveryForm.hidden = !job;
+      recoveryConfirm.checked = false;
+      recoverySubmit.disabled = true;
+      if (!job) return;
+      const item = document.createElement("p");
+      item.className = "recovery-job";
+      item.textContent = "Trabajo exacto que se va a resolver: " + job.id;
+      attentionList.append(item);
+      recoveryRef.replaceChildren();
+      for (const project of availableProjects) addOption(recoveryRef, project.ref, project.name + " · " + project.region + " · " + project.status);
+      currentJobId = job.id;
+      recoveryConfirm.checked = false;
+      recoveryForm.elements.decision.value = "existing";
+      recoveryRef.required = true;
+      document.querySelector("#recovery-existing-fields").hidden = false;
+      recoverySubmit.disabled = true;
+    };
+
+    const refreshAttention = async () => {
+      currentJobId = null;
+      recoveryConfirm.checked = false;
+      recoverySubmit.disabled = true;
+      try {
+        const data = await request("/api/jobs/attention");
+        attentionJobs = data.jobs.filter((job) => job.status === "needs_attention" && job.error?.code === "project_creation_ambiguous");
+        recoveryResult.dataset.state = "";
+        recoveryResult.textContent = "";
+        renderAttention();
+      } catch (error) {
+        attentionPanel.hidden = false;
+        recoveryResult.dataset.state = "error";
+        recoveryResult.textContent = "No se pudo consultar si quedan proyectos por revisar: " + error.message;
+      }
+    };
+
+    const updateRecoveryState = () => {
+      recoveryConfirm.checked = false;
+      recoverySubmit.disabled = recoveryInFlight || !recoveryConfirm.checked;
+      const existingDecision = recoveryForm.elements.decision.value === "existing";
+      recoveryRef.required = existingDecision;
+      document.querySelector("#recovery-existing-fields").hidden = !existingDecision;
+    };
+    if (recoveryForm) {
+      recoveryForm.addEventListener("change", (event) => {
+        if (event.target.name === "decision" || event.target === recoveryRef) updateRecoveryState();
+        if (event.target === recoveryConfirm) recoverySubmit.disabled = recoveryInFlight || !recoveryConfirm.checked;
+      });
+      recoveryForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (recoveryInFlight || !recoveryConfirm.checked || !currentJobId) return;
+        const decision = recoveryForm.elements.decision.value;
+        if (decision === "existing" && !recoveryRef.value) {
+          recoveryRef.focus();
+          recoveryResult.dataset.state = "error";
+          recoveryResult.textContent = "Elegí el proyecto que encontraste en Supabase.";
+          return;
+        }
+        const jobId = currentJobId;
+        const body = decision === "existing"
+          ? { decision, ref: recoveryRef.value, confirmed: true }
+          : { decision, confirmed: true };
+        recoveryInFlight = true;
+        recoverySubmit.disabled = true;
+        recoveryResult.dataset.state = "";
+        recoveryResult.textContent = "Guardando la revisión…";
+        try {
+          const data = await request("/api/jobs/" + encodeURIComponent(jobId) + "/resolve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+            body: JSON.stringify(body),
+          });
+          currentJobId = null;
+          recoveryConfirm.checked = false;
+          if (data.resolution.decision === "existing") {
+            setupForm.elements.mode.value = "existing";
+            await loadOptions({ scroll: false, preferredRef: data.resolution.ref });
+            if (data.resolution.ref && /^[a-z0-9]{20}$/.test(data.resolution.ref)
+              && ![...existingSelect.options].some((option) => option.value === data.resolution.ref)) {
+              addOption(existingSelect, data.resolution.ref, data.resolution.ref);
+            }
+            existingSelect.value = data.resolution.ref;
+          } else {
+            setupForm.elements.mode.value = "create";
+          }
+          selectMode();
+          await refreshAttention();
+          recoveryResult.dataset.state = "success";
+          recoveryResult.textContent = "La revisión quedó guardada. Cuando estés listo, presioná el botón de configuración para continuar.";
+          setupResult.dataset.state = "success";
+          setupResult.textContent = recoveryResult.textContent;
+          if (attentionJobs.length === 0) setupButton.focus();
+        } catch (error) {
+          recoveryResult.dataset.state = "error";
+          recoveryResult.textContent = error.message;
+          recoverySubmit.disabled = false;
+        } finally {
+          recoveryInFlight = false;
+          if (!recoveryConfirm.checked) recoverySubmit.disabled = true;
+        }
+      });
+    }
 
     connectionForm.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -369,6 +518,7 @@ export const renderConnectionPage = ({
         }
         if (["failed", "interrupted", "needs_attention"].includes(job.status)) {
           setupResult.dataset.state = "error";
+          if (job.status === "needs_attention") await refreshAttention();
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -403,6 +553,7 @@ export const renderConnectionPage = ({
       } catch (error) {
         setupResult.dataset.state = "error";
         setupResult.textContent = error.message;
+        if (error.status === 409) await refreshAttention();
       } finally {
         setupButton.disabled = false;
       }

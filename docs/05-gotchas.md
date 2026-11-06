@@ -116,8 +116,31 @@ intento. Mientras no pueda guardarlo, no acepta nuevas tareas.
 
 Repetir el mismo identificador devuelve la tarea ya registrada; para ejecutar de
 nuevo una tarea marcada como fallida, iniciá un nuevo intento desde el formulario.
-Esto no desbloquea una creación de proyecto de resultado incierto: si Supabase
-pudo haberlo creado, sigue siendo necesario revisar el panel para no duplicarlo.
+Una creación de proyecto de resultado incierto necesita una revisión explícita,
+como se explica a continuación; no se reintenta automáticamente.
+
+### Supabase pudo haber creado el proyecto y el instalador no deja continuar
+
+**Primero revisá el panel de Supabase.** Un corte de conexión no demuestra que
+la creación haya fallado: volver a crear sin revisar puede duplicar el proyecto.
+
+En el instalador web, conectá Supabase y buscá el panel de recuperación. Los
+casos pendientes vuelven a aparecer aunque hayas recargado o reiniciado el
+instalador. Elegí el caso y una de estas opciones:
+
+- **El proyecto existe:** seleccioná el proyecto que encontraste. El instalador
+  verifica que el token guardado pueda acceder antes de registrar la decisión.
+- **No se creó ningún proyecto:** elegí esta opción solo después de comprobarlo
+  en el panel de Supabase.
+
+Marcá la confirmación de revisión y guardá la decisión. Queda registrada para
+ese caso; los demás casos pendientes siguen bloqueando nuevas creaciones.
+Si falla la validación o el guardado, el bloqueo se conserva.
+
+**Guardar la decisión no configura ni crea nada.** El formulario queda preparado
+para usar el proyecto elegido o crear uno nuevo; revisalo y pulsá su botón de
+configuración para iniciar un nuevo intento. No hay que borrar el historial,
+credenciales ni volúmenes para resolverlo.
 
 ### El mail de confirmación apunta a localhost:3000
 

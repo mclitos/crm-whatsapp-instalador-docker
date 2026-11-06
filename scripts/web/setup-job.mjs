@@ -45,6 +45,18 @@ const SAFE_ERROR_MESSAGES = Object.freeze({
   INVALID_PUBLIC_URL: "La URL pública no tiene un formato válido.",
 });
 
+class JobResolutionError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = "JobResolutionError";
+    this.statusCode = statusCode;
+    this.publicMessage = message;
+  }
+}
+
+const sameResolution = (left, right) => left?.decision === right?.decision
+  && (left?.decision !== "existing" || left?.ref === right?.ref);
+
 const safeFailure = (error) => {
   if (["PROJECT_CREATION_AMBIGUOUS", "PROJECT_REF_PERSIST_FAILED"].includes(error?.code)) {
     return {
@@ -66,11 +78,12 @@ const safeFailure = (error) => {
 };
 
 class SetupJobService {
-  constructor({ completionMessage, onSetupSucceeded, store, runSetup }) {
+  constructor({ completionMessage, onSetupSucceeded, store, runSetup, validateRecoveryProject }) {
     this.completionMessage = completionMessage;
     this.onSetupSucceeded = onSetupSucceeded;
     this.store = store;
     this.runSetup = runSetup;
+    this.validateRecoveryProject = validateRecoveryProject;
     this.successNotified = false;
     this.pendingFailures = new Map();
   }
@@ -86,6 +99,51 @@ class SetupJobService {
   async get(id) {
     await this.#recoverFailures();
     return this.store.get(id);
+  }
+
+  async listAttention() {
+    await this.#recoverFailures();
+    return this.store.listAttention();
+  }
+
+  async resolve(id, body) {
+    if (!body || typeof body !== "object" || Array.isArray(body)
+      || !["existing", "not_created"].includes(body.decision)
+      || body.confirmed !== true
+      || (body.decision === "existing"
+        ? typeof body.ref !== "string" || !/^[a-z0-9]{20}$/u.test(body.ref)
+        : Object.hasOwn(body, "ref"))) {
+      throw new JobResolutionError(400, "Confirmá la decisión y, si encontraste el proyecto, ingresá su referencia válida.");
+    }
+
+    await this.#recoverFailures();
+    const resolution = body.decision === "existing"
+      ? { decision: "existing", ref: body.ref }
+      : { decision: "not_created" };
+    const current = await this.store.get(id);
+    if (!current) throw new JobResolutionError(404, "No encontré esa recuperación pendiente.");
+    if (current.resolution) {
+      if (sameResolution(current.resolution, resolution)) {
+        return { job: await this.store.get(id), resolution: { ...current.resolution } };
+      }
+      throw new JobResolutionError(409, "Esta recuperación ya se resolvió con otra decisión.");
+    }
+    if (current.status !== "needs_attention" || current.error?.code !== "project_creation_ambiguous") {
+      throw new JobResolutionError(409, "Este trabajo no tiene una creación ambigua pendiente de resolver.");
+    }
+    if (body.decision === "existing") {
+      if (typeof this.validateRecoveryProject !== "function") {
+        throw new JobResolutionError(502, "No pude verificar el proyecto. Revisá la conexión y volvé a intentar.");
+      }
+      try {
+        const result = await this.validateRecoveryProject(body.ref);
+        if (result !== true && result?.ok !== true) throw new Error("validation failed");
+      } catch {
+        throw new JobResolutionError(502, "No pude verificar el acceso al proyecto. Revisá la referencia y el token de Supabase.");
+      }
+    }
+    const job = await this.store.resolveAttention(id, resolution);
+    return { job, resolution: { ...resolution } };
   }
 
   async #recoverFailures() {
@@ -149,6 +207,7 @@ export const createSetupJobService = async ({
   directory = process.env.WEB_INSTALLER_DATA_DIR || DEFAULT_DATA_DIRECTORY,
   onSetupSucceeded = async () => {},
   runSetup,
+  validateRecoveryProject,
   now,
   idGenerator,
 } = {}) => {
@@ -157,7 +216,7 @@ export const createSetupJobService = async ({
   const completionMessage = automaticCrmStart
     ? "Supabase quedó configurado. El CRM empieza a construirse y arrancar automáticamente."
     : PROGRESS_MESSAGES.completed;
-  return new SetupJobService({ completionMessage, onSetupSucceeded, store, runSetup });
+  return new SetupJobService({ completionMessage, onSetupSucceeded, store, runSetup, validateRecoveryProject });
 };
 
 export const createDefaultSetupJobService = async ({
@@ -170,6 +229,12 @@ export const createDefaultSetupJobService = async ({
   automaticCrmStart: environment.CRM_AUTO_START === "1",
   directory: environment.WEB_INSTALLER_DATA_DIR || DEFAULT_DATA_DIRECTORY,
   onSetupSucceeded,
+  async validateRecoveryProject(ref) {
+    const credentials = await credentialStore.load({ createKey: false });
+    const result = await createAdmin(credentials.supabaseAccessToken).proyecto(ref);
+    if (!result?.ok) throw new Error("project validation failed");
+    return true;
+  },
   async runSetup(input, { onProgress }) {
     const credentials = await credentialStore.load();
     const { repoUrl, commit } = resolveCrmSource({ environment, credentials });

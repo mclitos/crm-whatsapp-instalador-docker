@@ -169,6 +169,14 @@ const allowOptions = (options) => ({
   })).filter((item) => item.ref),
 });
 
+const allowResolution = (resolution) => {
+  if (resolution?.decision === "not_created") return { decision: "not_created" };
+  if (resolution?.decision === "existing" && /^[a-z0-9]{20}$/u.test(resolution.ref)) {
+    return { decision: "existing", ref: resolution.ref };
+  }
+  return null;
+};
+
 const allowJobSnapshot = (job) => job && ({
   id: typeof job.id === "string" ? job.id : "",
   status: typeof job.status === "string" ? job.status : "failed",
@@ -185,6 +193,7 @@ const allowJobSnapshot = (job) => job && ({
   createdAt: typeof job.createdAt === "string" ? job.createdAt : "",
   updatedAt: typeof job.updatedAt === "string" ? job.updatedAt : "",
   statusUrl: typeof job.statusUrl === "string" ? job.statusUrl : `/api/jobs/${job.id}`,
+  ...(allowResolution(job.resolution) ? { resolution: allowResolution(job.resolution) } : {}),
 });
 
 export const createWebInstallerServer = ({
@@ -193,6 +202,8 @@ export const createWebInstallerServer = ({
   connectSupabase = establishSupabaseConnection,
   defaultPublicUrl = process.env.CRM_PUBLIC_URL_DEFAULT || "http://localhost:3000",
   getSetupJob,
+  listAttentionJobs,
+  resolveSetupJob,
   loadSupabaseOptions = loadStoredSupabaseOptions,
   maxBodyBytes = MAX_BODY_BYTES,
   onSetupSucceeded = async () => {},
@@ -208,13 +219,19 @@ export const createWebInstallerServer = ({
     defaultJobService ||= createDefaultSetupJobService({ onSetupSucceeded });
     return defaultJobService;
   };
-  const customJobHandlers = Boolean(startSetupJob || getSetupJob);
+  const customJobHandlers = Boolean(startSetupJob || getSetupJob || listAttentionJobs || resolveSetupJob);
   const startJob = startSetupJob || (customJobHandlers
     ? async () => { throw new Error("Setup job start handler is not configured"); }
     : async (input) => (await getDefaultJobService()).start(input));
   const getJob = getSetupJob || (customJobHandlers
     ? async () => null
     : async (id) => (await getDefaultJobService()).get(id));
+  const listAttention = listAttentionJobs || (customJobHandlers
+    ? async () => []
+    : async () => (await getDefaultJobService()).listAttention());
+  const resolveJob = resolveSetupJob || (customJobHandlers
+    ? async () => { throw new Error("Setup job recovery handler is not configured"); }
+    : async (id, input) => (await getDefaultJobService()).resolve(id, input));
 
   return createServer(async (request, response) => {
     const expectedOrigin = expectedOriginFromHost(request, configuredOrigins);
@@ -311,6 +328,18 @@ export const createWebInstallerServer = ({
       return;
     }
 
+    if (request.method === "GET" && request.url === "/api/jobs/attention") {
+      try {
+        const jobs = (await listAttention()).map(allowJobSnapshot).filter((job) => (
+          job?.status === "needs_attention" && job.error?.code === "project_creation_ambiguous"
+        ));
+        sendJson(response, 200, { ok: true, jobs });
+      } catch (error) {
+        sendRequestError(response, error);
+      }
+      return;
+    }
+
     const jobMatch = request.method === "GET"
       ? request.url?.match(/^\/api\/jobs\/([A-Za-z0-9_-]{1,128})$/u)
       : null;
@@ -333,8 +362,11 @@ export const createWebInstallerServer = ({
       return;
     }
 
+    const resolveMatch = request.method === "POST"
+      ? request.url?.match(/^\/api\/jobs\/([A-Za-z0-9_-]{1,128})\/resolve$/u)
+      : null;
     const stateChangingRoute = request.method === "POST"
-      && ["/api/supabase/connect", "/api/supabase/setup"].includes(request.url);
+      && (["/api/supabase/connect", "/api/supabase/setup"].includes(request.url) || resolveMatch);
     if (!stateChangingRoute) {
       sendJson(response, 404, { ok: false, message: "Ruta no encontrada." });
       return;
@@ -364,6 +396,15 @@ export const createWebInstallerServer = ({
     let body;
     try {
       body = await readJsonBody(request, maxBodyBytes);
+      if (resolveMatch) {
+        const result = await resolveJob(resolveMatch[1], body);
+        sendJson(response, 200, {
+          ok: true,
+          job: allowJobSnapshot(result.job),
+          resolution: allowResolution(result.resolution),
+        });
+        return;
+      }
       if (request.url === "/api/supabase/connect") {
         const result = await connectSupabase(body);
         const payload = redactStrings({

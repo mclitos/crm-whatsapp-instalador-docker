@@ -199,6 +199,116 @@ test("the Spanish page presents project choices and secret-free provisioning pro
   assert.doesNotMatch(html, /service_role|SUPABASE_DB_PASSWORD/u);
 });
 
+test("attention listing and resolution require authentication before invoking handlers", async () => {
+  let calls = 0;
+  const origin = await startServer({
+    listAttentionJobs: async () => { calls += 1; return []; },
+    resolveSetupJob: async () => { calls += 1; return {}; },
+  }, "recovery-auth-token");
+
+  const listed = await fetch(`${origin}/api/jobs/attention`);
+  const resolved = await fetch(`${origin}/api/jobs/job-one/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: origin },
+    body: JSON.stringify({ decision: "not_created", confirmed: true }),
+  });
+
+  assert.equal(listed.status, 401);
+  assert.equal(resolved.status, 401);
+  assert.equal(calls, 0);
+});
+
+test("attention listing exposes only ambiguous public snapshots and no stored input", async () => {
+  const origin = await startServer({
+    listAttentionJobs: async () => [
+      { id: "job-attention", status: "needs_attention", stage: "needs_attention", error: { code: "project_creation_ambiguous", message: "Revisá el panel." }, input: { password: "private-details" } },
+      { id: "job-running", status: "running", error: null },
+    ],
+  });
+
+  const response = await fetch(`${origin}/api/jobs/attention`);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.jobs.map(({ id }) => id), ["job-attention"]);
+  assert.equal(Object.hasOwn(body.jobs[0], "input"), false);
+  assert.equal(JSON.stringify(body).includes("private-details"), false);
+});
+
+test("resolution uses the existing CSRF, origin, JSON, and body size controls", async () => {
+  let calls = 0;
+  const origin = await startServer({
+    resolveSetupJob: async () => { calls += 1; return {}; },
+  });
+  const session = await openSession(origin);
+  const body = JSON.stringify({ decision: "not_created", confirmed: true });
+  const headers = { "Content-Type": "application/json", Cookie: session.cookie, Origin: origin, "X-CSRF-Token": session.csrfToken };
+  const post = (overrides, data = body) => fetch(`${origin}/api/jobs/job-one/resolve`, { method: "POST", headers: { ...headers, ...overrides }, body: data });
+
+  assert.equal((await post({ "X-CSRF-Token": "invalid" })).status, 403);
+  assert.equal((await post({ Origin: "https://attacker.example" })).status, 403);
+  assert.equal((await post({ "Content-Type": "text/plain" })).status, 415);
+  assert.equal((await post({}, "{")).status, 400);
+  assert.equal((await post({}, JSON.stringify({ text: "x".repeat(17000) }))).status, 413);
+  assert.equal(calls, 0);
+});
+
+for (const resolution of [{ decision: "not_created" }, { decision: "existing", ref: "abcdefghijklmnopqrst" }]) {
+  test(`explicit ${resolution.decision} resolution is allowlisted and does not start setup`, async () => {
+    const calls = [];
+    let setups = 0;
+    const origin = await startServer({
+      startSetupJob: async () => { setups += 1; },
+      resolveSetupJob: async (id, body) => {
+        calls.push({ id, body });
+        return {
+          job: { id, status: "interrupted", stage: "interrupted", resolution: { ...resolution, private: "hidden-detail" }, input: { private: "hidden-detail" } },
+          resolution: { ...resolution, private: "hidden-detail" },
+          credentials: "hidden-detail",
+        };
+      },
+    });
+    const session = await openSession(origin);
+    const body = { ...resolution, confirmed: true };
+    const response = await fetch(`${origin}/api/jobs/job-one/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: session.cookie, Origin: origin, "X-CSRF-Token": session.csrfToken },
+      body: JSON.stringify(body),
+    });
+    const result = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, [{ id: "job-one", body }]);
+    assert.deepEqual(result.resolution, resolution);
+    assert.deepEqual(result.job.resolution, resolution);
+    assert.equal(result.job.status, "interrupted");
+    assert.equal(JSON.stringify(result).includes("hidden-detail"), false);
+    assert.equal(setups, 0);
+  });
+}
+
+test("resolution validation and conflicts preserve their safe error responses", async () => {
+  const origin = await startServer({
+    resolveSetupJob: async (_id, body) => {
+      throw Object.assign(new Error("private-backend-detail"), {
+        statusCode: body.confirmed ? 409 : 400,
+        publicMessage: body.confirmed ? "Ese resultado ya fue revisado." : "Confirmá que revisaste el panel.",
+      });
+    },
+  });
+  const session = await openSession(origin);
+  for (const confirmed of [false, true]) {
+    const response = await fetch(`${origin}/api/jobs/job-one/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: session.cookie, Origin: origin, "X-CSRF-Token": session.csrfToken },
+      body: JSON.stringify({ decision: "not_created", confirmed }),
+    });
+    assert.equal(response.status, confirmed ? 409 : 400);
+    assert.deepEqual(await response.json(), { ok: false, message: confirmed ? "Ese resultado ya fue revisado." : "Confirmá que revisaste el panel." });
+  }
+});
+
 test("local web mode does not claim Docker will start the CRM", async () => {
   const origin = await startServer();
   const html = await (await fetch(origin)).text();

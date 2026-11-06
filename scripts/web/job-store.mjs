@@ -24,7 +24,20 @@ const publicSnapshot = (job) => ({
   createdAt: job.createdAt,
   updatedAt: job.updatedAt,
   statusUrl: `/api/jobs/${job.id}`,
+  ...(job.resolution ? { resolution: { ...job.resolution } } : {}),
 });
+
+const sameResolution = (left, right) => left?.decision === right?.decision
+  && (left?.decision !== "existing" || left?.ref === right?.ref);
+
+export class JobResolutionError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = "JobResolutionError";
+    this.statusCode = statusCode;
+    this.publicMessage = message;
+  }
+}
 
 export class JobConflictError extends Error {
   constructor() {
@@ -111,6 +124,47 @@ export class JobStore {
     await this.writeQueue;
     const job = this.jobs.find((candidate) => candidate.id === id);
     return job ? publicSnapshot(job) : null;
+  }
+
+  async listAttention() {
+    await this.writeQueue;
+    return this.jobs
+      .filter((job) => job.status === "needs_attention" && job.error?.code === "project_creation_ambiguous")
+      .map(publicSnapshot);
+  }
+
+  async resolveAttention(id, resolution) {
+    if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)
+      || !["existing", "not_created"].includes(resolution.decision)
+      || Object.keys(resolution).some((key) => !["decision", "ref"].includes(key))
+      || (resolution.decision === "existing"
+        ? typeof resolution.ref !== "string" || !/^[a-z0-9]{20}$/u.test(resolution.ref)
+        : Object.hasOwn(resolution, "ref"))) {
+      throw new JobResolutionError(400, "La decisión de recuperación no tiene un formato válido.");
+    }
+    return this.#enqueue(async () => {
+      const previous = this.getInternal(id);
+      if (!previous) throw new JobResolutionError(404, "No encontré esa recuperación pendiente.");
+      if (previous.resolution) {
+        if (sameResolution(previous.resolution, resolution)) return publicSnapshot(previous);
+        throw new JobResolutionError(409, "Esta recuperación ya se resolvió con otra decisión.");
+      }
+      if (previous.status !== "needs_attention" || previous.error?.code !== "project_creation_ambiguous") {
+        throw new JobResolutionError(409, "Este trabajo no tiene una creación ambigua pendiente de resolver.");
+      }
+      const job = {
+        ...previous,
+        status: "interrupted",
+        stage: "interrupted",
+        error: { code: "interrupted", message: "La creación ambigua fue revisada. Iniciá una configuración nueva para continuar." },
+        resolution: { ...resolution },
+        updatedAt: this.#timestamp(),
+      };
+      const jobs = this.jobs.map((candidate) => candidate.id === id ? job : candidate);
+      await this.#persist(jobs);
+      this.jobs = jobs;
+      return publicSnapshot(job);
+    });
   }
 
   getInternal(id) {
