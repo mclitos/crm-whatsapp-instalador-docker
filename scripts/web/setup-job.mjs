@@ -72,30 +72,40 @@ class SetupJobService {
     this.store = store;
     this.runSetup = runSetup;
     this.successNotified = false;
+    this.pendingFailures = new Map();
   }
 
   async start(input) {
     const safeInput = validateSetupInput(input);
+    await this.#recoverFailures();
     const { snapshot, created } = await this.store.create(safeInput);
     if (created) queueMicrotask(() => void this.#execute(snapshot.id).catch(() => {}));
     return snapshot;
   }
 
-  get(id) {
+  async get(id) {
+    await this.#recoverFailures();
     return this.store.get(id);
+  }
+
+  async #recoverFailures() {
+    for (const [id, failure] of this.pendingFailures) {
+      await this.store.update(id, failure);
+      if (this.pendingFailures.get(id) === failure) this.pendingFailures.delete(id);
+    }
   }
 
   async #execute(id) {
     const job = this.store.getInternal(id);
     if (!job) return;
-    await this.store.update(id, {
-      status: "running",
-      stage: "validating_account",
-      progress: { current: 0, total: 0, message: PROGRESS_MESSAGES.validating_account },
-      error: null,
-    });
     let succeededSnapshot;
     try {
+      await this.store.update(id, {
+        status: "running",
+        stage: "validating_account",
+        progress: { current: 0, total: 0, message: PROGRESS_MESSAGES.validating_account },
+        error: null,
+      });
       await this.runSetup(job.input, {
         onProgress: async (event) => {
           if (!JOB_STAGES.has(event?.stage)) return;
@@ -117,7 +127,10 @@ class SetupJobService {
         error: null,
       });
     } catch (error) {
-      await this.store.update(id, safeFailure(error));
+      // If storage is still unavailable, retain the safe terminal state for the
+      // next poll/start to persist before accepting another setup request.
+      this.pendingFailures.set(id, safeFailure(error));
+      await this.#recoverFailures();
       return;
     }
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -37,6 +37,147 @@ afterEach(async () => {
     recursive: true,
     force: true,
   })));
+});
+
+for (const retryRequestId of ["request-write-failed", "request-after-repair"]) {
+  test(`failed creation persistence permits retry ${retryRequestId} without restart`, async () => {
+    const directory = await createDirectory();
+    let sequence = 0;
+    const store = new JobStore({ directory, idGenerator: () => `job-${++sequence}` });
+    await store.initialize();
+    const file = join(directory, "setup-jobs.json");
+    await mkdir(file);
+
+    await assert.rejects(store.create({ requestId: "request-write-failed", mode: "existing" }));
+    await rm(file, { recursive: true });
+    assert.equal(await store.get("job-1"), null);
+    const retry = await store.create({ requestId: retryRequestId, mode: "existing" });
+
+    assert.equal(retry.created, true);
+    assert.equal(retry.snapshot.id, "job-2");
+    assert.equal(retry.snapshot.status, "queued");
+    assert.equal(await store.get("job-1"), null);
+    const restarted = new JobStore({ directory });
+    await restarted.initialize();
+    assert.equal(await restarted.get("job-1"), null);
+    assert.equal((await restarted.get("job-2")).status, "interrupted");
+  });
+}
+
+test("concurrent duplicate requests cannot observe a job whose creation failed to persist", async () => {
+  const directory = await createDirectory();
+  const store = new JobStore({ directory, idGenerator: () => "job-unwritten" });
+  await store.initialize();
+  const file = join(directory, "setup-jobs.json");
+  await mkdir(file);
+  const input = { requestId: "request-concurrent", mode: "existing" };
+
+  const results = await Promise.allSettled([store.create(input), store.create(input)]);
+
+  assert.deepEqual(results.map(({ status }) => status), ["rejected", "rejected"]);
+  await rm(file, { recursive: true });
+  assert.equal(await store.get("job-unwritten"), null);
+  assert.equal((await store.create(input)).created, true);
+});
+
+for (const failures of [1, 2]) {
+  test(`initial running-state write failure recovers after ${failures} storage errors`, async (t) => {
+    const { createSetupJobService } = await loadJobsModule();
+    const directory = await createDirectory();
+    const original = JobStore.prototype.update;
+    let attempts = 0;
+    let setups = 0;
+    let notifications = 0;
+    let sequence = 0;
+    t.mock.method(JobStore.prototype, "update", async function (...args) {
+      if (++attempts <= failures) throw new Error("storage-detail-must-stay-private");
+      return original.apply(this, args);
+    });
+    const service = await createSetupJobService({
+      directory,
+      idGenerator: () => `job-start-${++sequence}`,
+      runSetup: async () => { setups += 1; },
+      onSetupSucceeded: async () => { notifications += 1; },
+    });
+    const request = { requestId: "request-start", mode: "existing", ref: "abcdefghijklmnopqrst", publicUrl: "http://localhost:3000" };
+
+    const started = await service.start(request);
+    await waitFor(() => attempts > 0);
+    const failed = await service.get(started.id);
+
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.error.code, "setup_failed");
+    assert.equal(JSON.stringify(failed).includes("storage-detail"), false);
+    assert.equal(setups, 0);
+    assert.equal(notifications, 0);
+    const repeated = await service.start(request);
+    assert.equal(repeated.id, started.id);
+    assert.equal(repeated.status, "failed");
+    const retry = await service.start({ ...request, requestId: "request-start-retry" });
+    await waitFor(async () => (await service.get(retry.id))?.status === "succeeded");
+    assert.equal(setups, 1);
+    assert.equal(notifications, 1);
+  });
+}
+
+test("a rejected update preserves the last durable snapshot and later writes recover", async () => {
+  const directory = await createDirectory();
+  const store = new JobStore({ directory, idGenerator: () => "job-existing" });
+  await store.initialize();
+  await store.create({ requestId: "request-existing", mode: "existing" });
+  const previous = await store.update("job-existing", { status: "succeeded", stage: "completed" });
+  const file = join(directory, "setup-jobs.json");
+  const backup = join(directory, "saved-jobs.json");
+  await rename(file, backup);
+  await mkdir(file);
+
+  await assert.rejects(store.update("job-existing", { status: "running", stage: "validating_account" }));
+  assert.deepEqual(await store.get("job-existing"), previous);
+  await rm(file, { recursive: true });
+  await rename(backup, file);
+  const restarted = new JobStore({ directory });
+  await restarted.initialize();
+  assert.deepEqual(await restarted.get("job-existing"), previous);
+  const updated = await store.update("job-existing", { status: "failed", stage: "failed" });
+  assert.equal(updated.status, "failed");
+  assert.deepEqual(await store.get("job-existing"), updated);
+});
+
+test("persistent startup storage failures block new work until a start request can recover", async (t) => {
+  const { createSetupJobService } = await loadJobsModule();
+  const directory = await createDirectory();
+  const original = JobStore.prototype.update;
+  let unavailable = true;
+  let attempts = 0;
+  let setups = 0;
+  let notifications = 0;
+  let sequence = 0;
+  t.mock.method(JobStore.prototype, "update", async function (...args) {
+    attempts += 1;
+    if (unavailable) throw new Error("storage unavailable");
+    return original.apply(this, args);
+  });
+  const service = await createSetupJobService({
+    directory,
+    idGenerator: () => `job-persistent-${++sequence}`,
+    runSetup: async () => { setups += 1; },
+    onSetupSucceeded: async () => { notifications += 1; },
+  });
+  const request = { requestId: "request-persistent", mode: "existing", ref: "abcdefghijklmnopqrst", publicUrl: "http://localhost:3000" };
+  const started = await service.start(request);
+  await waitFor(() => attempts >= 2);
+  await assert.rejects(service.get(started.id));
+  await assert.rejects(service.start({ ...request, requestId: "request-still-unavailable" }));
+  assert.equal(setups, 0);
+  assert.equal(notifications, 0);
+  assert.equal(sequence, 1);
+
+  unavailable = false;
+  const retry = await service.start({ ...request, requestId: "request-storage-restored" });
+  assert.equal((await service.get(started.id)).status, "failed");
+  await waitFor(async () => (await service.get(retry.id))?.status === "succeeded");
+  assert.equal(setups, 1);
+  assert.equal(notifications, 1);
 });
 
 test("job reads wait until the published state is durable", async () => {

@@ -79,29 +79,32 @@ export class JobStore {
   }
 
   async create(input) {
-    const repeated = this.jobs.find((job) => job.requestId === input.requestId);
-    if (repeated) return { snapshot: publicSnapshot(repeated), created: false };
-    const unresolvedCreation = input.mode === "create" && this.jobs.some((job) => (
-      job.status === "needs_attention" && job.error?.code === "project_creation_ambiguous"
-    ));
-    if (unresolvedCreation) throw new JobConflictError();
-    if (this.jobs.some((job) => ACTIVE_JOB_STATUSES.has(job.status))) throw new JobConflictError();
+    return this.#enqueue(async () => {
+      const repeated = this.jobs.find((job) => job.requestId === input.requestId);
+      if (repeated) return { snapshot: publicSnapshot(repeated), created: false };
+      const unresolvedCreation = input.mode === "create" && this.jobs.some((job) => (
+        job.status === "needs_attention" && job.error?.code === "project_creation_ambiguous"
+      ));
+      if (unresolvedCreation) throw new JobConflictError();
+      if (this.jobs.some((job) => ACTIVE_JOB_STATUSES.has(job.status))) throw new JobConflictError();
 
-    const timestamp = this.#timestamp();
-    const job = {
-      id: this.idGenerator(),
-      requestId: input.requestId,
-      input: { ...input },
-      status: "queued",
-      stage: "queued",
-      progress: { current: 0, total: 0, message: "Preparando la instalación." },
-      error: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    this.jobs.push(job);
-    await this.#persist();
-    return { snapshot: publicSnapshot(job), created: true };
+      const timestamp = this.#timestamp();
+      const job = {
+        id: this.idGenerator(),
+        requestId: input.requestId,
+        input: { ...input },
+        status: "queued",
+        stage: "queued",
+        progress: { current: 0, total: 0, message: "Preparando la instalación." },
+        error: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      const jobs = [...this.jobs, job];
+      await this.#persist(jobs);
+      this.jobs = jobs;
+      return { snapshot: publicSnapshot(job), created: true };
+    });
   }
 
   async get(id) {
@@ -115,15 +118,27 @@ export class JobStore {
   }
 
   async update(id, patch) {
-    const job = this.getInternal(id);
-    if (!job) return null;
-    if (patch.status && JOB_STATUSES.has(patch.status)) job.status = patch.status;
-    if (typeof patch.stage === "string") job.stage = patch.stage;
-    if (patch.progress) job.progress = { ...patch.progress };
-    if (Object.hasOwn(patch, "error")) job.error = patch.error ? { ...patch.error } : null;
-    job.updatedAt = this.#timestamp();
-    await this.#persist();
-    return publicSnapshot(job);
+    return this.#enqueue(async () => {
+      const previous = this.getInternal(id);
+      if (!previous) return null;
+      const job = { ...previous };
+      if (patch.status && JOB_STATUSES.has(patch.status)) job.status = patch.status;
+      if (typeof patch.stage === "string") job.stage = patch.stage;
+      if (patch.progress) job.progress = { ...patch.progress };
+      if (Object.hasOwn(patch, "error")) job.error = patch.error ? { ...patch.error } : null;
+      job.updatedAt = this.#timestamp();
+      const jobs = this.jobs.map((candidate) => candidate.id === id ? job : candidate);
+      await this.#persist(jobs);
+      this.jobs = jobs;
+      return publicSnapshot(job);
+    });
+  }
+
+  #enqueue(operation) {
+    const result = this.writeQueue.then(operation);
+    // Failed writes reject their caller, not every later read or mutation.
+    this.writeQueue = result.catch(() => {});
+    return result;
   }
 
   #timestamp() {
@@ -131,22 +146,18 @@ export class JobStore {
     return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
   }
 
-  async #persist() {
-    const operation = async () => {
-      const temporaryPath = resolve(this.directory, `.setup-jobs.${randomBytes(8).toString("hex")}.tmp`);
-      try {
-        await writeFile(temporaryPath, `${JSON.stringify({ version: 1, jobs: this.jobs }, null, 2)}\n`, {
-          mode: 0o600,
-          flag: "wx",
-        });
-        await secureMode(temporaryPath, 0o600);
-        await rename(temporaryPath, this.path);
-        await secureMode(this.path, 0o600);
-      } finally {
-        await rm(temporaryPath, { force: true });
-      }
-    };
-    this.writeQueue = this.writeQueue.then(operation, operation);
-    await this.writeQueue;
+  async #persist(jobs = this.jobs) {
+    const temporaryPath = resolve(this.directory, `.setup-jobs.${randomBytes(8).toString("hex")}.tmp`);
+    try {
+      await writeFile(temporaryPath, `${JSON.stringify({ version: 1, jobs }, null, 2)}\n`, {
+        mode: 0o600,
+        flag: "wx",
+      });
+      await secureMode(temporaryPath, 0o600);
+      // Rename commits the already-restricted file; nothing fallible follows it.
+      await rename(temporaryPath, this.path);
+    } finally {
+      await rm(temporaryPath, { force: true }).catch(() => {});
+    }
   }
 }

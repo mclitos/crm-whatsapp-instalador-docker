@@ -103,6 +103,22 @@ Meta revisa el *display name*. Rechaza los genéricos ("Ventas", "Oficial",
 
 ## Supabase
 
+### El instalador web no puede guardar una tarea
+
+Revisá el espacio disponible y los permisos del directorio de datos del
+instalador. En Docker se guarda en el volumen `installer-data`: **no lo borres**.
+
+Si falla el guardado inicial, la tarea no arranca y podés volver a enviar la
+configuración cuando se resuelva el problema, sin reiniciar el instalador.
+Si falla el guardado del estado al arrancar, tampoco se ejecuta la configuración:
+el instalador intenta registrar el fallo al consultar la tarea o enviar otro
+intento. Mientras no pueda guardarlo, no acepta nuevas tareas.
+
+Repetir el mismo identificador devuelve la tarea ya registrada; para ejecutar de
+nuevo una tarea marcada como fallida, iniciá un nuevo intento desde el formulario.
+Esto no desbloquea una creación de proyecto de resultado incierto: si Supabase
+pudo haberlo creado, sigue siendo necesario revisar el panel para no duplicarlo.
+
 ### El mail de confirmación apunta a localhost:3000
 
 El **Site URL** no está configurado. No es un bug del CRM.
