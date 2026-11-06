@@ -8,11 +8,10 @@
  * pasos son idempotentes.
  */
 
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  ROOT, CRM_DIR, C, encabezado, info, leerEnv, confirmar, salir, rutaCredenciales,
+  ROOT, C, encabezado, leerEnv, confirmar, salir, rutaCredenciales,
   verificarNode,
 } from "./lib/ui.mjs";
 
